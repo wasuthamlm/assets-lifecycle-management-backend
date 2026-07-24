@@ -1,3 +1,5 @@
 .env
 node_modules/
 dist/
+README copy.md
+PROJECT_STRUCTURE.md
