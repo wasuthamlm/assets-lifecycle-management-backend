@@ -24,6 +24,7 @@ import { RepairsModule } from './modules/repairs/repairs.module';
 import { WarrantyModule } from './modules/warranty/warranty.module';
 import { DisposalModule } from './modules/disposal/disposal.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -56,6 +57,8 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     WarrantyModule,
     DisposalModule,
     AttachmentsModule,
+
+    DashboardModule,
   ],
   providers: [
     // Global guard: ทุก endpoint ต้อง login ก่อนเสมอ ยกเว้นที่ประกาศ @Public()

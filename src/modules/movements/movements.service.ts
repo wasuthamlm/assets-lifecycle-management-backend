@@ -26,6 +26,10 @@ export class MovementsService {
   }
 
   findAll() {
-    return this.repo.find({ order: { createdAt: 'DESC' }, take: 200 });
+    return this.repo.find({
+      order: { createdAt: 'DESC' },
+      take: 200,
+      relations: ['asset', 'fromLocation', 'toLocation', 'performedByEmployee'],
+    });
   }
 }

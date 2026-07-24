@@ -48,18 +48,26 @@ export class RequisitionsService {
       );
       await manager.save(approvals);
 
-      return this.findOne(requisition.requisitionId);
+      const created = await manager.findOne(Requisition, {
+        where: { requisitionId: requisition.requisitionId },
+        relations: ['requestedByEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
+      });
+      if (!created) throw new NotFoundException(`ไม่พบใบขอเบิก/ยืม id ${requisition.requisitionId}`);
+      return created;
     });
   }
 
   findAll() {
-    return this.repo.find({ relations: ['items', 'approvals'], order: { requisitionId: 'DESC' } });
+    return this.repo.find({
+      relations: ['requestedByEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
+      order: { requisitionId: 'DESC' },
+    });
   }
 
   async findOne(id: number) {
     const r = await this.repo.findOne({
       where: { requisitionId: id },
-      relations: ['items', 'approvals', 'approvals.approver'],
+      relations: ['requestedByEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
     });
     if (!r) throw new NotFoundException(`ไม่พบใบขอเบิก/ยืม id ${id}`);
     return r;

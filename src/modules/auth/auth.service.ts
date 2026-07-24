@@ -7,6 +7,13 @@ import * as argon2 from 'argon2';
 import { User } from '../users/entities/user.entity';
 import { LoginDto } from './dto/login.dto';
 
+export interface CurrentUserPayload {
+  userId: number;
+  username: string;
+  employeeId: number | null;
+  permissions: string[];
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -42,6 +49,34 @@ export class AuthService {
   async logout(userId: number) {
     await this.usersRepo.update({ userId }, { refreshTokenHash: null });
     return { success: true };
+  }
+
+  async me(currentUser: CurrentUserPayload) {
+    const user = await this.usersRepo.findOne({
+      where: { userId: currentUser.userId },
+      relations: ['employee', 'employee.department'],
+    });
+    if (!user) throw new UnauthorizedException();
+
+    return {
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      employeeId: user.employeeId,
+      permissions: currentUser.permissions,
+      employee: user.employee
+        ? {
+            employeeId: user.employee.employeeId,
+            employeeCode: user.employee.employeeCode,
+            fullName: user.employee.fullName,
+            position: user.employee.position,
+            email: user.employee.email,
+            department: user.employee.department
+              ? { departmentId: user.employee.department.departmentId, departmentName: user.employee.department.departmentName }
+              : null,
+          }
+        : null,
+    };
   }
 
   private async issueTokens(user: User) {

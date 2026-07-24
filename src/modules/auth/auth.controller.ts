@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
@@ -32,5 +32,11 @@ export class AuthController {
   @Post('logout')
   logout(@CurrentUser() user) {
     return this.authService.logout(user.userId);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Get('me')
+  me(@CurrentUser() user) {
+    return this.authService.me(user);
   }
 }
