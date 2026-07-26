@@ -4,6 +4,9 @@ import { RepairsService } from './repairs.service';
 import { CreateRepairDto } from './dto/create-repair.dto';
 import { UpdateRepairStatusDto } from './dto/update-repair-status.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
+import { CurrentUser } from '@common/decorators/current-user.decorator';
+import { requireEmployeeId } from '@common/utils/require-employee-id.util';
+import { CurrentUserPayload } from '../auth/auth.service';
 
 @ApiTags('repairs')
 @ApiBearerAuth()
@@ -12,7 +15,9 @@ export class RepairsController {
   constructor(private service: RepairsService) {}
 
   @Post() @RequirePermissions('repair.create')
-  create(@Body() dto: CreateRepairDto) { return this.service.create(dto); }
+  create(@Body() dto: CreateRepairDto, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.create(dto, requireEmployeeId(user));
+  }
 
   @Get() @RequirePermissions('repair.view')
   findAll() { return this.service.findAll(); }

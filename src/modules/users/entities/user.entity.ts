@@ -1,4 +1,5 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { BaseEntity } from '@common/entities/base.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 
@@ -19,9 +20,12 @@ export class User extends BaseEntity {
   @Column({ unique: true, nullable: true })
   email: string;
 
+  // @Exclude กัน hash หลุดออกไปใน response ทุกจุดที่คืน entity นี้ตรงๆ ผ่าน ClassSerializerInterceptor (ดู main.ts)
+  @Exclude()
   @Column({ name: 'password_hash' })
   passwordHash: string;
 
+  @Exclude()
   @Column({ name: 'refresh_token_hash', nullable: true, type: 'text' })
   refreshTokenHash: string | null;
 

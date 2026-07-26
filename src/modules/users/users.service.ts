@@ -14,6 +14,11 @@ export class UsersService {
     const existing = await this.repo.findOne({ where: { username: dto.username } });
     if (existing) throw new ConflictException('username นี้ถูกใช้ไปแล้ว');
 
+    if (dto.email) {
+      const existingEmail = await this.repo.findOne({ where: { email: dto.email } });
+      if (existingEmail) throw new ConflictException('email นี้ถูกใช้ไปแล้ว');
+    }
+
     const user = this.repo.create({
       username: dto.username,
       email: dto.email,

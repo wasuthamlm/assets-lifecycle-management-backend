@@ -3,6 +3,9 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AttachmentsService } from './attachments.service';
 import { CreateAttachmentDto } from './dto/create-attachment.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
+import { CurrentUser } from '@common/decorators/current-user.decorator';
+import { requireEmployeeId } from '@common/utils/require-employee-id.util';
+import { CurrentUserPayload } from '../auth/auth.service';
 
 @ApiTags('attachments')
 @ApiBearerAuth()
@@ -11,7 +14,9 @@ export class AttachmentsController {
   constructor(private service: AttachmentsService) {}
 
   @Post() @RequirePermissions('attachment.manage')
-  create(@Body() dto: CreateAttachmentDto) { return this.service.create(dto); }
+  create(@Body() dto: CreateAttachmentDto, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.create(dto, requireEmployeeId(user));
+  }
 
   @Get() @RequirePermissions('attachment.view')
   findByReference(@Query('referenceType') referenceType: string, @Query('referenceId', ParseIntPipe) referenceId: number) {

@@ -13,7 +13,5 @@ export class CreateDisposalDto {
 
   @ApiPropertyOptional() @IsOptional() @IsNumber() saleAmount?: number;
 
-  @ApiProperty() @IsInt() approvedBy: number;
-
   @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;
 }

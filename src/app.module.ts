@@ -1,8 +1,12 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ClsModule } from 'nestjs-cls';
+import { randomUUID } from 'crypto';
 import { dataSourceOptions } from './config/typeorm.config';
+import { envValidationSchema } from './config/env.validation';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -25,14 +29,29 @@ import { WarrantyModule } from './modules/warranty/warranty.module';
 import { DisposalModule } from './modules/disposal/disposal.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { HealthModule } from './modules/health/health.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { LoggerMiddleware } from './common/middlewares/logger.middleware';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // ต้อง import ก่อน module อื่นเสมอ เพื่อให้ ClsMiddleware ทำงานก่อน middleware/filter อื่นที่ต้องอ่าน requestId
+    ClsModule.forRoot({
+      global: true,
+      middleware: {
+        mount: true,
+        generateId: true,
+        idGenerator: (req) => req.headers['x-request-id'] ?? randomUUID(),
+      },
+    }),
+    ConfigModule.forRoot({ isGlobal: true, validationSchema: envValidationSchema }),
     TypeOrmModule.forRoot(dataSourceOptions),
+
+    // Global rate limit: default 60 req / 60s ต่อ client (ปรับ override เฉพาะ endpoint ผ่าน @Throttle)
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
 
     // Access control / master data
     AuthModule,
@@ -59,12 +78,21 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     AttachmentsModule,
 
     DashboardModule,
+    HealthModule,
   ],
   providers: [
+    // Global guard: จำกัดความถี่ request ต่อ client ก่อนเช็คสิทธิ์ใด ๆ (กัน brute-force / flood)
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Global guard: ทุก endpoint ต้อง login ก่อนเสมอ ยกเว้นที่ประกาศ @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // Global guard: ตรวจ @RequirePermissions(...) ถ้ามีประกาศไว้
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    // Global filter ผ่าน DI (ต้องใช้ ClsService เพื่อ log requestId)
+    { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes('*');
+  }
+}

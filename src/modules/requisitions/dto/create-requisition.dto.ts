@@ -1,21 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestType } from '@common/enums';
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsEnum, IsInt, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDateString, IsEnum, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 
 class RequisitionItemInput {
   @ApiPropertyOptional() @IsOptional() @IsInt() assetId?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() stockItemId?: number;
-  @ApiPropertyOptional() @IsOptional() @IsInt() quantity?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) quantity?: number;
 }
 
 export class CreateRequisitionDto {
-  @ApiProperty({ example: 'REQ-2026-0001' })
-  @IsString()
-  requisitionNo: string;
-
-  @ApiProperty() @IsInt() requestedBy: number;
-
   @ApiProperty({ enum: RequestType })
   @IsEnum(RequestType)
   requestType: RequestType;
@@ -31,6 +25,7 @@ export class CreateRequisitionDto {
 
   @ApiProperty({ type: [Number], description: 'employee_id ของผู้อนุมัติแต่ละลำดับชั้น เช่น [หัวหน้างาน, ผจก.] = multi-level' })
   @IsArray()
+  @ArrayMinSize(1)
   @IsInt({ each: true })
   approverIds: number[];
 }

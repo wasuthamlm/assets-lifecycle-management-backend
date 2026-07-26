@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { MovementType, HolderType } from '@common/enums';
 import { Asset } from '../../assets/entities/asset.entity';
 import { Employee } from '../../employees/entities/employee.entity';
@@ -16,6 +16,7 @@ export class Movement {
   movementId: number;
 
   @Column({ name: 'asset_id' })
+  @Index('IDX_movements_asset_id')
   assetId: number;
 
   @ManyToOne(() => Asset)
@@ -58,6 +59,7 @@ export class Movement {
   referenceId: number | null;
 
   @Column({ name: 'performed_by' })
+  @Index('IDX_movements_performed_by')
   performedBy: number;
 
   @ManyToOne(() => Employee)

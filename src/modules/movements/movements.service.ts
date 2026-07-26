@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Movement } from './entities/movement.entity';
 import { CreateMovementDto } from './dto/create-movement.dto';
 
@@ -13,8 +13,15 @@ import { CreateMovementDto } from './dto/create-movement.dto';
 export class MovementsService {
   constructor(@InjectRepository(Movement) private repo: Repository<Movement>) {}
 
-  log(dto: CreateMovementDto) {
-    return this.repo.save(this.repo.create(dto));
+  /**
+   * รับ `manager` ของ transaction ปัจจุบันได้ (optional) — ผู้เรียกที่อยู่ใน dataSource.transaction(...) อยู่แล้ว
+   * (goods-receipt, assignments, repairs, warranty, disposal) ต้องส่ง manager นั้นเข้ามาเสมอ ไม่งั้น movement
+   * จะถูก insert ผ่าน connection คนละตัวกับ transaction — ถ้า record ที่ movement อ้างถึง (เช่น asset ที่เพิ่งสร้าง)
+   * ยังไม่ commit จะชน FK constraint ทันที และถ้า transaction หลัก rollback ทีหลัง movement log ก็จะไม่ rollback ตาม
+   */
+  log(dto: CreateMovementDto, manager?: EntityManager) {
+    const repo = manager ? manager.getRepository(Movement) : this.repo;
+    return repo.save(repo.create(dto));
   }
 
   findByAsset(assetId: number) {

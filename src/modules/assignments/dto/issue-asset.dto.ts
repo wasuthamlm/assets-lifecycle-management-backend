@@ -19,10 +19,6 @@ export class IssueAssetDto {
   @IsInt()
   holderId: number;
 
-  @ApiProperty()
-  @IsInt()
-  issuedBy: number;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()

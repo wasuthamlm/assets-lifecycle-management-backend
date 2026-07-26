@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { StockItem } from './entities/stock-item.entity';
 import { StockLevel } from './entities/stock-level.entity';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
@@ -12,6 +12,7 @@ export class StockService {
   constructor(
     @InjectRepository(StockItem) private itemRepo: Repository<StockItem>,
     @InjectRepository(StockLevel) private levelRepo: Repository<StockLevel>,
+    private dataSource: DataSource,
   ) {}
 
   createItem(dto: CreateStockItemDto) {
@@ -40,19 +41,39 @@ export class StockService {
 
   /**
    * ปรับจำนวนคงเหลือแบบ atomic (ใช้ตอนรับของเข้า / เบิกออก / โอนย้าย)
-   * ถ้ายังไม่มีแถว stock_level ของ (stock_item, location) นี้ ให้สร้างใหม่เริ่มที่ 0 ก่อน
+   * เดิมเป็น read-then-write ธรรมดา (ไม่ atomic) — 2 คำขอปรับสต๊อกชิ้นเดียวกันพร้อมกันจะเกิด lost update
+   * แก้ด้วย: insert แถว stock_level เริ่มที่ 0 ด้วย ON CONFLICT DO NOTHING (กันชนกันตอนแถวยังไม่มี)
+   * แล้วค่อย SELECT...FOR UPDATE ล็อกแถวจริงก่อนคำนวณ/บันทึกจำนวนใหม่
+   *
+   * ถ้าผู้เรียกอยู่ใน transaction ของตัวเองอยู่แล้ว (เช่น goods-receipt) ให้ส่ง `manager` เข้ามาเพื่อรวมอยู่ใน
+   * transaction เดียวกัน ถ้าไม่ส่งมา จะเปิด transaction ใหม่ของตัวเอง
    */
-  async adjust(dto: AdjustStockDto) {
-    let level = await this.levelRepo.findOne({
+  adjust(dto: AdjustStockDto, manager?: EntityManager) {
+    if (manager) return this.adjustWithManager(manager, dto);
+    return this.dataSource.transaction((txManager) => this.adjustWithManager(txManager, dto));
+  }
+
+  private async adjustWithManager(manager: EntityManager, dto: AdjustStockDto) {
+    const repo = manager.getRepository(StockLevel);
+
+    await repo
+      .createQueryBuilder()
+      .insert()
+      .into(StockLevel)
+      .values({ stockItemId: dto.stockItemId, locationId: dto.locationId, quantityOnHand: 0 })
+      .orIgnore()
+      .execute();
+
+    const level = await repo.findOne({
       where: { stockItemId: dto.stockItemId, locationId: dto.locationId },
+      lock: { mode: 'pessimistic_write' },
     });
-    if (!level) {
-      level = this.levelRepo.create({ stockItemId: dto.stockItemId, locationId: dto.locationId, quantityOnHand: 0 });
-    }
+    if (!level) throw new NotFoundException('ไม่พบ stock level หลังพยายามสร้าง');
+
     const newQty = level.quantityOnHand + dto.delta;
     if (newQty < 0) throw new BadRequestException('จำนวนคงเหลือจะติดลบ ไม่สามารถปรับได้');
     level.quantityOnHand = newQty;
     level.updatedAt = new Date();
-    return this.levelRepo.save(level);
+    return repo.save(level);
   }
 }

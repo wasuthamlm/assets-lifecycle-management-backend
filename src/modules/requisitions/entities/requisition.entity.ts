@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from '@common/entities/base.entity';
 import { RequestType, ApprovalStatus } from '@common/enums';
 import { Employee } from '../../employees/entities/employee.entity';
@@ -20,6 +20,7 @@ export class Requisition extends BaseEntity {
   requisitionNo: string;
 
   @Column({ name: 'requested_by' })
+  @Index('IDX_requisitions_requested_by')
   requestedBy: number;
 
   @ManyToOne(() => Employee)

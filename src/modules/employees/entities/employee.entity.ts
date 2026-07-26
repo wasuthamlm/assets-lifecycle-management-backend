@@ -1,4 +1,4 @@
-import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
+import { Column, Entity, Index, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
 import { BaseEntity } from '@common/entities/base.entity';
 import { Department } from '../../departments/entities/department.entity';
 import { EmployeeRole } from '../../roles-permissions/entities/employee-role.entity';
@@ -15,6 +15,7 @@ export class Employee extends BaseEntity {
   fullName: string;
 
   @Column({ name: 'department_id', nullable: true })
+  @Index('IDX_employees_department_id')
   departmentId: number;
 
   @ManyToOne(() => Department, (d) => d.employees, { nullable: true })

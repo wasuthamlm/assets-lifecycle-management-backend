@@ -1,10 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ReturnCondition } from '@common/enums';
-import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class ReturnAssetDto {
-  @ApiProperty() @IsInt() receivedBy: number;
-
   @ApiProperty({ enum: ReturnCondition })
   @IsEnum(ReturnCondition)
   returnCondition: ReturnCondition;

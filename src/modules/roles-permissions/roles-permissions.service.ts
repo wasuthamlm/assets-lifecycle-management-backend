@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Role } from './entities/role.entity';
 import { Permission } from './entities/permission.entity';
 import { RolePermission } from './entities/role-permission.entity';
 import { EmployeeRole } from './entities/employee-role.entity';
+import { Employee } from '../employees/entities/employee.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { AssignPermissionsDto } from './dto/assign-permission.dto';
@@ -17,6 +18,8 @@ export class RolesPermissionsService {
     @InjectRepository(Permission) private permissionRepo: Repository<Permission>,
     @InjectRepository(RolePermission) private rolePermissionRepo: Repository<RolePermission>,
     @InjectRepository(EmployeeRole) private employeeRoleRepo: Repository<EmployeeRole>,
+    @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    private dataSource: DataSource,
   ) {}
 
   // ---- Roles ----
@@ -49,20 +52,45 @@ export class RolesPermissionsService {
   // ---- Assign permissions ให้ role (replace ทั้งชุด) ----
   async assignPermissionsToRole(roleId: number, dto: AssignPermissionsDto) {
     await this.findRole(roleId);
-    await this.rolePermissionRepo.delete({ roleId });
-    const rows = dto.permissionIds.map((permissionId) =>
-      this.rolePermissionRepo.create({ roleId, permissionId }),
-    );
-    await this.rolePermissionRepo.save(rows);
-    return this.findRole(roleId);
+
+    if (dto.permissionIds.length > 0) {
+      const found = await this.permissionRepo.find({ where: { permissionId: In(dto.permissionIds) } });
+      if (found.length !== new Set(dto.permissionIds).size) {
+        const foundIds = new Set(found.map((p) => p.permissionId));
+        const missing = dto.permissionIds.filter((id) => !foundIds.has(id));
+        throw new NotFoundException(`ไม่พบ permission id: ${missing.join(', ')}`);
+      }
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      await manager.delete(RolePermission, { roleId });
+      const rows = dto.permissionIds.map((permissionId) => manager.create(RolePermission, { roleId, permissionId }));
+      await manager.save(rows);
+      return manager.findOne(Role, {
+        where: { roleId },
+        relations: ['rolePermissions', 'rolePermissions.permission'],
+      });
+    });
   }
 
   // ---- Assign roles ให้ employee (replace ทั้งชุด, รองรับหลาย role ต่อคน) ----
   async assignRolesToEmployee(employeeId: number, dto: AssignRolesDto) {
-    await this.employeeRoleRepo.delete({ employeeId });
-    const rows = dto.roleIds.map((roleId) =>
-      this.employeeRoleRepo.create({ employeeId, roleId, assignedDate: new Date() }),
-    );
-    return this.employeeRoleRepo.save(rows);
+    const employee = await this.employeeRepo.findOne({ where: { employeeId } });
+    if (!employee) throw new NotFoundException(`ไม่พบพนักงาน id ${employeeId}`);
+
+    if (dto.roleIds.length > 0) {
+      const found = await this.roleRepo.find({ where: { roleId: In(dto.roleIds) } });
+      if (found.length !== new Set(dto.roleIds).size) {
+        const foundIds = new Set(found.map((r) => r.roleId));
+        const missing = dto.roleIds.filter((id) => !foundIds.has(id));
+        throw new NotFoundException(`ไม่พบ role id: ${missing.join(', ')}`);
+      }
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      await manager.delete(EmployeeRole, { employeeId });
+      const rows = dto.roleIds.map((roleId) => manager.create(EmployeeRole, { employeeId, roleId, assignedDate: new Date() }));
+      return manager.save(rows);
+    });
   }
 }

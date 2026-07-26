@@ -1,15 +1,29 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { NestFactory, Reflector } from '@nestjs/core';
+import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: true });
+  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const app = await NestFactory.create(AppModule, {
+    cors: { origin: corsOrigins, credentials: true },
+    // ปิด body-parser default ของ Nest เพื่อให้ limit ด้านล่างมีผลจริง (ไม่งั้น req._body ถูกตั้งไปแล้วก่อนถึง app.use)
+    bodyParser: false,
+  });
 
   app.use(helmet());
+  // จำกัดขนาด request body กัน payload ใหญ่เกินจำเป็น (DoS ผ่าน large body)
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
   app.setGlobalPrefix('api/v1');
+  // ทำให้ @Exclude() บน entity (เช่น passwordHash, refreshTokenHash) มีผลจริงกับทุก response
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -18,7 +32,6 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  app.useGlobalFilters(new HttpExceptionFilter());
 
   const config = new DocumentBuilder()
     .setTitle('IT Asset Lifecycle Management API')

@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from '@common/entities/base.entity';
 import { RepairStatus, RepairResult } from '@common/enums';
 import { Asset } from '../../assets/entities/asset.entity';
@@ -12,6 +12,7 @@ export class Repair extends BaseEntity {
   repairId: number;
 
   @Column({ name: 'asset_id' })
+  @Index('IDX_repairs_asset_id')
   assetId: number;
 
   @ManyToOne(() => Asset)

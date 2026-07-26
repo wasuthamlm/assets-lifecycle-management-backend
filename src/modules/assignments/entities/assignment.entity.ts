@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from '@common/entities/base.entity';
 import { AssignmentType, HolderType, ReturnCondition } from '@common/enums';
 import { Asset } from '../../assets/entities/asset.entity';
@@ -13,11 +13,13 @@ import { Employee } from '../../employees/entities/employee.entity';
  * assignment ใหม่ถูกสร้างเสมอเมื่อมีการ issue/return/transfer และจะ insert movement คู่กันเสมอ 1:1
  */
 @Entity('assignments')
+@Index('IDX_assignments_holder_type_holder_id', ['holderType', 'holderId'])
 export class Assignment extends BaseEntity {
   @PrimaryGeneratedColumn({ name: 'assignment_id' })
   assignmentId: number;
 
   @Column({ name: 'asset_id' })
+  @Index('IDX_assignments_asset_id')
   assetId: number;
 
   @ManyToOne(() => Asset)

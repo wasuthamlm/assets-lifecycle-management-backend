@@ -8,8 +8,8 @@ import { CreateAttachmentDto } from './dto/create-attachment.dto';
 export class AttachmentsService {
   constructor(@InjectRepository(Attachment) private repo: Repository<Attachment>) {}
 
-  create(dto: CreateAttachmentDto) {
-    return this.repo.save(this.repo.create(dto));
+  create(dto: CreateAttachmentDto, uploadedBy: number) {
+    return this.repo.save(this.repo.create({ ...dto, uploadedBy }));
   }
 
   findByReference(referenceType: string, referenceId: number) {

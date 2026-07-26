@@ -31,13 +31,13 @@ export class GoodsReceiptService {
     private dataSource: DataSource,
   ) {}
 
-  async create(dto: CreateGoodsReceiptDto) {
+  async create(dto: CreateGoodsReceiptDto, receivedBy: number) {
     return this.dataSource.transaction(async (manager) => {
       const receipt = manager.create(GoodsReceipt, {
         receiptNo: dto.receiptNo,
         poId: dto.poId,
         receiptDate: dto.receiptDate ? new Date(dto.receiptDate) : new Date(),
-        receivedBy: dto.receivedBy,
+        receivedBy,
         locationId: dto.locationId,
         notes: dto.notes,
       });
@@ -59,25 +59,31 @@ export class GoodsReceiptService {
             warrantyExpireDate: assetData.warrantyExpireDate ? new Date(assetData.warrantyExpireDate) : null,
             currentStatus: AssetStatus.IN_STOCK,
             currentLocationId: dto.locationId,
-            createdBy: dto.receivedBy,
+            createdBy: receivedBy,
           });
           await manager.save(asset);
           assetId = asset.assetId;
 
-          await this.movementsService.log({
-            assetId: asset.assetId,
-            movementType: MovementType.RECEIVED_TO_STOCK,
-            toLocationId: dto.locationId,
-            referenceType: 'goods_receipt',
-            referenceId: receipt.receiptId,
-            performedBy: dto.receivedBy,
-          });
+          await this.movementsService.log(
+            {
+              assetId: asset.assetId,
+              movementType: MovementType.RECEIVED_TO_STOCK,
+              toLocationId: dto.locationId,
+              referenceType: 'goods_receipt',
+              referenceId: receipt.receiptId,
+              performedBy: receivedBy,
+            },
+            manager,
+          );
         } else {
-          await this.stockService.adjust({
-            stockItemId: itemDto.stockItemId!,
-            locationId: dto.locationId,
-            delta: itemDto.receivedQuantity || 0,
-          });
+          await this.stockService.adjust(
+            {
+              stockItemId: itemDto.stockItemId!,
+              locationId: dto.locationId,
+              delta: itemDto.receivedQuantity || 0,
+            },
+            manager,
+          );
         }
 
         const receiptItem = manager.create(GoodsReceiptItem, {
@@ -91,9 +97,18 @@ export class GoodsReceiptService {
         await manager.save(receiptItem);
 
         if (itemDto.poItemId) {
-          const poItem = await manager.findOne(PurchaseOrderItem, { where: { poItemId: itemDto.poItemId } });
+          const poItem = await manager.findOne(PurchaseOrderItem, {
+            where: { poItemId: itemDto.poItemId },
+            lock: { mode: 'pessimistic_write' },
+          });
           if (poItem) {
-            poItem.receivedQuantity += hasStock ? itemDto.receivedQuantity || 0 : 1;
+            const receivingNow = hasStock ? itemDto.receivedQuantity || 0 : 1;
+            if (poItem.receivedQuantity + receivingNow > poItem.quantity) {
+              throw new BadRequestException(
+                `รับของเกินจำนวนที่สั่งซื้อ: รายการ poItemId ${poItem.poItemId} สั่ง ${poItem.quantity} รับไปแล้ว ${poItem.receivedQuantity} รับเพิ่มได้อีกไม่เกิน ${poItem.quantity - poItem.receivedQuantity}`,
+              );
+            }
+            poItem.receivedQuantity += receivingNow;
             await manager.save(poItem);
           }
         }
@@ -109,7 +124,9 @@ export class GoodsReceiptService {
         }
       }
 
-      return this.receiptRepo.findOne({ where: { receiptId: receipt.receiptId }, relations: ['items'] });
+      // ต้องอ่านผ่าน manager (connection เดียวกับ transaction นี้) ไม่ใช่ this.receiptRepo ที่เป็นคนละ
+      // connection — transaction ยังไม่ commit ตอนนี้ อ่านผ่าน connection อื่นจะไม่เห็นแถวที่เพิ่ง insert (คืน null)
+      return manager.findOne(GoodsReceipt, { where: { receiptId: receipt.receiptId }, relations: ['items'] });
     });
   }
 

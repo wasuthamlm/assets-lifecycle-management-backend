@@ -34,6 +34,7 @@ const PERMISSIONS = [
   'warranty.manage',
   'disposal.create', 'disposal.view',
   'attachment.manage', 'attachment.view',
+  'dashboard.view',
 ];
 
 async function run() {

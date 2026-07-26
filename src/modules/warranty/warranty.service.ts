@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Warranty } from './entities/warranty.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { CreateWarrantyDto } from './dto/create-warranty.dto';
@@ -14,19 +14,21 @@ export class WarrantyService {
     @InjectRepository(Warranty) private repo: Repository<Warranty>,
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     private movementsService: MovementsService,
+    private dataSource: DataSource,
   ) {}
 
   async create(dto: CreateWarrantyDto) {
     const asset = await this.assetRepo.findOne({ where: { assetId: dto.assetId } });
     if (!asset) throw new NotFoundException(`ไม่พบทรัพย์สิน id ${dto.assetId}`);
 
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    if (endDate <= startDate) {
+      throw new BadRequestException('endDate ต้องมาหลัง startDate');
+    }
+
     const warranty = await this.repo.save(
-      this.repo.create({
-        ...dto,
-        startDate: new Date(dto.startDate),
-        endDate: new Date(dto.endDate),
-        status: WarrantyStatus.ACTIVE,
-      }),
+      this.repo.create({ ...dto, startDate, endDate, status: WarrantyStatus.ACTIVE }),
     );
 
     asset.warrantyExpireDate = warranty.endDate;
@@ -45,27 +47,37 @@ export class WarrantyService {
     return w;
   }
 
-  async renew(id: number, dto: RenewWarrantyDto) {
+  async renew(id: number, dto: RenewWarrantyDto, performedBy: number) {
     const warranty = await this.findOne(id);
-    warranty.endDate = new Date(dto.newEndDate);
-    warranty.status = WarrantyStatus.RENEWED;
-    await this.repo.save(warranty);
-
-    const asset = await this.assetRepo.findOne({ where: { assetId: warranty.assetId } });
-    if (asset) {
-      asset.warrantyExpireDate = warranty.endDate;
-      await this.assetRepo.save(asset);
-
-      await this.movementsService.log({
-        assetId: asset.assetId,
-        movementType: MovementType.WARRANTY_RENEWED,
-        referenceType: 'warranty',
-        referenceId: warranty.warrantyId,
-        performedBy: dto.performedBy,
-        notes: `ต่อประกันถึง ${dto.newEndDate}`,
-      });
+    const newEndDate = new Date(dto.newEndDate);
+    if (newEndDate <= warranty.endDate) {
+      throw new BadRequestException('newEndDate ต้องมาหลังวันหมดอายุเดิมของประกัน (ไม่สามารถต่อประกันย้อนหลังได้)');
     }
 
-    return warranty;
+    return this.dataSource.transaction(async (manager) => {
+      warranty.endDate = newEndDate;
+      warranty.status = WarrantyStatus.RENEWED;
+      await manager.save(warranty);
+
+      const asset = await manager.findOne(Asset, { where: { assetId: warranty.assetId } });
+      if (asset) {
+        asset.warrantyExpireDate = warranty.endDate;
+        await manager.save(asset);
+
+        await this.movementsService.log(
+          {
+            assetId: asset.assetId,
+            movementType: MovementType.WARRANTY_RENEWED,
+            referenceType: 'warranty',
+            referenceId: warranty.warrantyId,
+            performedBy,
+            notes: `ต่อประกันถึง ${dto.newEndDate}`,
+          },
+          manager,
+        );
+      }
+
+      return warranty;
+    });
   }
 }

@@ -1,22 +1,38 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsInt, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+class ReceiptAssetDataInput {
+  @ApiProperty({ example: 'FA-2026-00123' }) @IsString() assetNo: string;
+  @ApiProperty() @IsInt() categoryId: number;
+  @ApiProperty() @IsString() assetName: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() serialNumber?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() brandModel?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() vendorId?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) purchaseCost?: number;
+  @ApiPropertyOptional() @IsOptional() @IsDateString() warrantyExpireDate?: string;
+}
 
 class ReceiptItemInput {
   @ApiPropertyOptional() @IsOptional() @IsInt() poItemId?: number;
 
-  @ApiPropertyOptional({ description: 'กรณีรับของ serialized (fixed asset) — ระบุ field เหล่านี้เพื่อสร้าง asset ใหม่' })
+  @ApiPropertyOptional({
+    type: ReceiptAssetDataInput,
+    description: 'กรณีรับของ serialized (fixed asset) — ระบุ field เหล่านี้เพื่อสร้าง asset ใหม่',
+  })
   @IsOptional()
-  assetData?: {
-    assetNo: string;
-    categoryId: number;
-    assetName: string;
-    serialNumber?: string;
-    brandModel?: string;
-    vendorId?: number;
-    purchaseCost?: number;
-    warrantyExpireDate?: string;
-  };
+  @ValidateNested()
+  @Type(() => ReceiptAssetDataInput)
+  assetData?: ReceiptAssetDataInput;
 
   @ApiPropertyOptional({ description: 'กรณีรับของ consumable/bulk' })
   @IsOptional()
@@ -26,6 +42,7 @@ class ReceiptItemInput {
   @ApiPropertyOptional({ description: 'ใช้กับ stockItemId เท่านั้น' })
   @IsOptional()
   @IsInt()
+  @Min(1)
   receivedQuantity?: number;
 
   @ApiPropertyOptional() @IsOptional() @IsString() conditionOnReceipt?: string;
@@ -39,8 +56,6 @@ export class CreateGoodsReceiptDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() poId?: number;
 
   @ApiPropertyOptional() @IsOptional() @IsDateString() receiptDate?: string;
-
-  @ApiProperty() @IsInt() receivedBy: number;
 
   @ApiProperty() @IsInt() locationId: number;
 

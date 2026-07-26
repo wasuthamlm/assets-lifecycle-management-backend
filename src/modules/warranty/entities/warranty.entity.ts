@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from '@common/entities/base.entity';
 import { WarrantyStatus } from '@common/enums';
 import { Asset } from '../../assets/entities/asset.entity';
@@ -11,6 +11,7 @@ export class Warranty extends BaseEntity {
   warrantyId: number;
 
   @Column({ name: 'asset_id' })
+  @Index('IDX_warranties_asset_id')
   assetId: number;
 
   @ManyToOne(() => Asset)
