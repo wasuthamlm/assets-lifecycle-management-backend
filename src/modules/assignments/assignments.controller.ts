@@ -36,6 +36,12 @@ export class AssignmentsController {
     return this.service.findMine(requireEmployeeId(user));
   }
 
+  @Get()
+  @RequirePermissions('assignment.return')
+  findPendingReturns() {
+    return this.service.findPendingReturns();
+  }
+
   @Get('asset/:assetId')
   @RequirePermissions('asset.view')
   findByAsset(@Param('assetId', ParseIntPipe) assetId: number) {

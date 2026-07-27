@@ -5,7 +5,7 @@ import { Asset } from './entities/asset.entity';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { QueryAssetDto } from './dto/query-asset.dto';
-import { HolderType } from '@common/enums';
+import { AssetStatus, HolderType } from '@common/enums';
 import { Employee } from '../employees/entities/employee.entity';
 import { Department } from '../departments/entities/department.entity';
 import { Location } from '../locations/entities/location.entity';
@@ -46,7 +46,23 @@ export class AssetsService {
     qb.skip((page - 1) * limit).take(limit).orderBy('asset.assetId', 'DESC');
 
     const [data, total] = await qb.getManyAndCount();
-    return { data, total, page, limit };
+
+    // นับจำนวนทรัพย์สิน "รุ่นเดียวกัน" (assetName ตรงกัน) ที่ยังว่าง (AVAILABLE) ให้แต่ละแถวในหน้านี้
+    const names = [...new Set(data.map((a) => a.assetName))];
+    const availableCounts = names.length
+      ? await this.repo
+          .createQueryBuilder('a')
+          .select('a.assetName', 'assetName')
+          .addSelect('COUNT(*)', 'count')
+          .where('a.assetName IN (:...names)', { names })
+          .andWhere('a.currentStatus = :status', { status: AssetStatus.IN_STOCK })
+          .groupBy('a.assetName')
+          .getRawMany<{ assetName: string; count: string }>()
+      : [];
+    const countByName = new Map(availableCounts.map((r) => [r.assetName, parseInt(r.count, 10)]));
+    const withAvailableCount = data.map((a) => ({ ...a, availableCount: countByName.get(a.assetName) ?? 0 }));
+
+    return { data: withAvailableCount, total, page, limit };
   }
 
   async findOne(id: number) {

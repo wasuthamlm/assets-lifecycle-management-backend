@@ -9,6 +9,7 @@ import { Department } from '../../modules/departments/entities/department.entity
 import { Employee } from '../../modules/employees/entities/employee.entity';
 import { EmployeeRole } from '../../modules/roles-permissions/entities/employee-role.entity';
 import { User } from '../../modules/users/entities/user.entity';
+import { AllowedDomain } from '../../modules/allowed-domains/entities/allowed-domain.entity';
 
 /**
  * Seed ข้อมูลเริ่มต้นที่จำเป็นต่อการใช้งานระบบ:
@@ -49,6 +50,7 @@ async function run() {
   const employeeRepo = dataSource.getRepository(Employee);
   const employeeRoleRepo = dataSource.getRepository(EmployeeRole);
   const userRepo = dataSource.getRepository(User);
+  const allowedDomainRepo = dataSource.getRepository(AllowedDomain);
 
   // 1) Permissions
   const permissionEntities: Permission[] = [];
@@ -180,6 +182,15 @@ async function run() {
       }),
     );
     console.log('  + user login: test.employee / Test@12345  (role: employee — สำหรับเทส UI)');
+  }
+
+  // 6) โดเมนที่อนุญาตให้ login ผ่าน Microsoft SSO (ยังไม่ได้ต่อ SSO จริง แต่เตรียมรายการไว้ก่อน)
+  let allowedDomain = await allowedDomainRepo.findOne({ where: { domain: 'millimedthailand.com' } });
+  if (!allowedDomain) {
+    allowedDomain = await allowedDomainRepo.save(
+      allowedDomainRepo.create({ domain: 'millimedthailand.com', companyId: company.companyId, isEnabled: true }),
+    );
+    console.log('  + allowed domain: millimedthailand.com (company: MLM)');
   }
 
   await dataSource.destroy();

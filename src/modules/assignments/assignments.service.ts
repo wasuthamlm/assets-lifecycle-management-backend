@@ -149,6 +149,15 @@ export class AssignmentsService {
     return this.repo.find({ where: { assetId }, order: { issuedDate: 'DESC' } });
   }
 
+  /** ทรัพย์สินที่ยังไม่ถูกคืนทั้งหมด — คิวสำหรับทีม IT รับของคืน เรียงตามกำหนดคืนใกล้สุดก่อน (เกินกำหนดขึ้นก่อน) */
+  findPendingReturns() {
+    return this.repo.find({
+      where: { returnedDate: IsNull() },
+      relations: ['asset', 'issuedByEmployee'],
+      order: { dueDate: 'ASC', issuedDate: 'ASC' },
+    });
+  }
+
   /** ทรัพย์สินที่ employee คนนี้ถือครองอยู่ตอนนี้ (ยังไม่คืน) */
   findMine(employeeId: number) {
     return this.repo.find({

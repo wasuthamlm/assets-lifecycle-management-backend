@@ -17,6 +17,7 @@ import { RolesPermissionsModule } from './modules/roles-permissions/roles-permis
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { AssetCategoriesModule } from './modules/asset-categories/asset-categories.module';
+import { AllowedDomainsModule } from './modules/allowed-domains/allowed-domains.module';
 import { AssetsModule } from './modules/assets/assets.module';
 import { StockModule } from './modules/stock/stock.module';
 import { PurchasingModule } from './modules/purchasing/purchasing.module';
@@ -63,6 +64,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     VendorsModule,
     LocationsModule,
     AssetCategoriesModule,
+    AllowedDomainsModule,
 
     // Core asset lifecycle
     AssetsModule,
