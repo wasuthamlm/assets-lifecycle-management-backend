@@ -27,6 +27,19 @@ export class RequisitionsService {
     return generateSequentialNumber(manager, Requisition, 'requisitionNo', `REQ-${year}-`);
   }
 
+  /** Preview เลขที่เอกสารถัดไปให้ฟอร์มแสดงก่อนบันทึกจริง — ไม่ lock/จองเลข เลขจริงคำนวณอีกครั้งตอน create() */
+  async peekNextRequisitionNo(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `REQ-${year}-`;
+    const latest = await this.repo
+      .createQueryBuilder('r')
+      .where('r.requisitionNo LIKE :prefix', { prefix: `${prefix}%` })
+      .orderBy('r.requisitionNo', 'DESC')
+      .getOne();
+    const seq = latest ? parseInt(latest.requisitionNo.replace(prefix, ''), 10) + 1 : 1;
+    return `${prefix}${String(seq).padStart(4, '0')}`;
+  }
+
   async create(dto: CreateRequisitionDto, requestedBy: number) {
     for (const item of dto.items) {
       const hasAsset = item.assetId != null;

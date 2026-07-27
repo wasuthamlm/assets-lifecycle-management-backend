@@ -22,6 +22,10 @@ export class RequisitionsController {
   @Get() @RequirePermissions('requisition.view_all')
   findAll() { return this.service.findAll(); }
 
+  // preview เลขที่เอกสารถัดไปให้หน้าสร้างใบขอใช้แสดง — ใช้สิทธิ์เดียวกับการสร้าง ไม่ใช่ view_all
+  @Get('next-no') @RequirePermissions('requisition.create')
+  nextNo() { return this.service.peekNextRequisitionNo().then((requisitionNo) => ({ requisitionNo })); }
+
   @Get('mine') @RequirePermissions('requisition.view_own')
   findMine(@CurrentUser() user: CurrentUserPayload) {
     return this.service.findMine(requireEmployeeId(user));

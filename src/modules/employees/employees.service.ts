@@ -17,6 +17,13 @@ export class EmployeesService {
     return this.repo.find({ relations: ['department'] });
   }
 
+  findDirectory() {
+    return this.repo.find({
+      select: ['employeeId', 'fullName', 'departmentId', 'position'],
+      order: { fullName: 'ASC' },
+    });
+  }
+
   async findOne(id: number) {
     const emp = await this.repo.findOne({
       where: { employeeId: id },

@@ -143,6 +143,45 @@ async function run() {
     console.log('  + user login: admin / Admin@12345  (⚠️ เปลี่ยนรหัสผ่านทันทีหลังใช้งานจริง)');
   }
 
+  // 5) พนักงานทดสอบ role "employee" — ไว้เทสการมองเห็นหน้า UI ของผู้ใช้งานทั่วไป
+  let testEmployee = await employeeRepo.findOne({ where: { employeeCode: 'EMP-0002' } });
+  if (!testEmployee) {
+    testEmployee = await employeeRepo.save(
+      employeeRepo.create({
+        employeeCode: 'EMP-0002',
+        fullName: 'Test Employee',
+        departmentId: itDept.departmentId,
+        position: 'Staff',
+        email: 'test.employee@millimed.local',
+      }),
+    );
+    console.log('  + employee: EMP-0002 (Test Employee)');
+  }
+
+  const existingTestLink = await employeeRoleRepo.findOne({
+    where: { employeeId: testEmployee.employeeId, roleId: employeeRole.roleId },
+  });
+  if (!existingTestLink) {
+    await employeeRoleRepo.save(
+      employeeRoleRepo.create({ employeeId: testEmployee.employeeId, roleId: employeeRole.roleId, assignedDate: new Date() }),
+    );
+    console.log('  ✓ assigned role employee -> EMP-0002');
+  }
+
+  let testUser = await userRepo.findOne({ where: { username: 'test.employee' } });
+  if (!testUser) {
+    testUser = await userRepo.save(
+      userRepo.create({
+        username: 'test.employee',
+        email: 'test.employee@millimed.local',
+        passwordHash: await argon2.hash('Test@12345'),
+        employeeId: testEmployee.employeeId,
+        isActive: true,
+      }),
+    );
+    console.log('  + user login: test.employee / Test@12345  (role: employee — สำหรับเทส UI)');
+  }
+
   await dataSource.destroy();
   console.log('✅ Seed completed');
 }
