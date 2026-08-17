@@ -17,6 +17,7 @@ export const envValidationSchema = Joi.object({
   DB_USERNAME: Joi.string().default('postgres'),
   DB_PASSWORD: Joi.string().default('postgres'),
   DB_DATABASE: Joi.string().default('assetdb'),
+  DB_SSL: Joi.boolean().default(false),
 
   JWT_ACCESS_SECRET: Joi.string().required(),
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
