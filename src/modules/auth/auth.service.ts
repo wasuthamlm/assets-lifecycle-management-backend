@@ -36,8 +36,17 @@ export class AuthService {
     return this.issueTokens(user);
   }
 
-  async refresh(userId: number, rawRefreshToken: string) {
-    const user = await this.usersRepo.findOne({ where: { userId } });
+  async refresh(rawRefreshToken: string) {
+    let payload: { sub: number };
+    try {
+      payload = await this.jwtService.verifyAsync(rawRefreshToken, {
+        secret: this.config.get('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('refresh token ไม่ถูกต้องหรือหมดอายุ');
+    }
+
+    const user = await this.usersRepo.findOne({ where: { userId: payload.sub } });
     if (!user || !user.refreshTokenHash) throw new UnauthorizedException();
 
     const valid = await argon2.verify(user.refreshTokenHash, rawRefreshToken);

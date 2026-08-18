@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
@@ -27,18 +27,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
-    // decode ตัว refresh token เองแบบง่าย เพื่อดึง userId (ไม่ verify signature ซ้ำที่นี่ เพราะ service verify ผ่าน hash เทียบอยู่แล้ว)
-    let payload: any;
-    try {
-      const [, payloadSegment] = dto.refreshToken.split('.');
-      payload = JSON.parse(Buffer.from(payloadSegment, 'base64').toString());
-    } catch {
-      throw new BadRequestException('refreshToken รูปแบบไม่ถูกต้อง');
-    }
-    if (!payload || typeof payload.sub !== 'number') {
-      throw new BadRequestException('refreshToken รูปแบบไม่ถูกต้อง');
-    }
-    return this.authService.refresh(payload.sub, dto.refreshToken);
+    return this.authService.refresh(dto.refreshToken);
   }
 
   @UseGuards(AuthGuard('jwt'))
