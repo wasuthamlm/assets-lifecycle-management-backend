@@ -23,15 +23,17 @@ export class CreateAssetDto {
   @IsString()
   assetName: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty()
   @IsString()
-  serialNumber?: string;
+  serialNumber: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty()
   @IsString()
-  brandModel?: string;
+  brand: string;
+
+  @ApiProperty()
+  @IsString()
+  model: string;
 
   @ApiPropertyOptional()
   @IsOptional()

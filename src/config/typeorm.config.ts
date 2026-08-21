@@ -25,6 +25,12 @@ export const dataSourceOptions: DataSourceOptions = {
   entities: [__dirname + '/../modules/**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
   migrationsTableName: 'typeorm_migrations',
+  // จำกัด pool ให้เข้ากับ connection limit ของ Supabase pooler และกันคำสั่งค้างไม่รู้ตัว
+  extra: {
+    max: parseInt(process.env.DB_POOL_MAX || '10', 10),
+    idleTimeoutMillis: 30000,
+    statement_timeout: 30000,
+  },
 };
 
 const dataSource = new DataSource(dataSourceOptions);

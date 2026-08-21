@@ -88,3 +88,12 @@ export enum MovementType {
   WARRANTY_RENEWED = 'warranty_renewed',
   DISPOSED = 'disposed',
 }
+
+// ไม่มีใน DBML — เพิ่มเข้ามารองรับการแจ้งเตือนในระบบ (ดู modules/notifications)
+export enum NotificationType {
+  REQUISITION_PENDING_APPROVAL = 'requisition_pending_approval',
+  REQUISITION_APPROVED = 'requisition_approved',
+  REQUISITION_REJECTED = 'requisition_rejected',
+  WARRANTY_EXPIRING = 'warranty_expiring',
+  ASSIGNMENT_OVERDUE = 'assignment_overdue',
+}

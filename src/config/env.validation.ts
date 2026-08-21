@@ -18,6 +18,7 @@ export const envValidationSchema = Joi.object({
   DB_PASSWORD: Joi.string().default('postgres'),
   DB_DATABASE: Joi.string().default('assetdb'),
   DB_SSL: Joi.boolean().default(false),
+  DB_POOL_MAX: Joi.number().default(10),
 
   JWT_ACCESS_SECRET: Joi.string().required(),
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
@@ -25,4 +26,23 @@ export const envValidationSchema = Joi.object({
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
 
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
+  // ใช้สร้างลิงก์ในอีเมลรีเซ็ตรหัสผ่าน (AuthService.forgotPassword) — ต้องชี้ไปที่ frontend ไม่ใช่ backend
+  FRONTEND_URL: Joi.string().default('http://localhost:5173'),
+
+  // Swagger (/api/docs) ต้องใส่ทั้งคู่ถึงจะเปิดใน production ได้ — ไม่ใส่ = ปิด Swagger นอก development
+  SWAGGER_USER: Joi.string().optional().allow(''),
+  SWAGGER_PASSWORD: Joi.string().optional().allow(''),
+
+  // ไฟล์แนบ (asset photo / เอกสารประกอบ) — เก็บบน Supabase Storage (private bucket)
+  MAX_UPLOAD_SIZE_MB: Joi.number().default(10),
+  SUPABASE_URL: Joi.string().optional().allow(''),
+  SUPABASE_SERVICE_ROLE_KEY: Joi.string().optional().allow(''),
+  SUPABASE_STORAGE_BUCKET: Joi.string().default('attachments'),
+
+  // อีเมลแจ้งเตือน — ถ้าไม่ใส่ SMTP_HOST ระบบจะ log แทนการส่งจริง (ดู MailService)
+  SMTP_HOST: Joi.string().optional().allow(''),
+  SMTP_PORT: Joi.number().optional(),
+  SMTP_USER: Joi.string().optional().allow(''),
+  SMTP_PASS: Joi.string().optional().allow(''),
+  SMTP_FROM: Joi.string().optional().allow(''),
 });

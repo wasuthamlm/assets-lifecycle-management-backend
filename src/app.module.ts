@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ClsModule } from 'nestjs-cls';
@@ -29,10 +30,13 @@ import { RepairsModule } from './modules/repairs/repairs.module';
 import { WarrantyModule } from './modules/warranty/warranty.module';
 import { DisposalModule } from './modules/disposal/disposal.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MailModule } from './modules/mail/mail.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { PasswordChangeGuard } from './common/guards/password-change.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { LoggerMiddleware } from './common/middlewares/logger.middleware';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -50,6 +54,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     }),
     ConfigModule.forRoot({ isGlobal: true, validationSchema: envValidationSchema }),
     TypeOrmModule.forRoot(dataSourceOptions),
+    ScheduleModule.forRoot(),
 
     // Global rate limit: default 60 req / 60s ต่อ client (ปรับ override เฉพาะ endpoint ผ่าน @Throttle)
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
@@ -78,6 +83,8 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     WarrantyModule,
     DisposalModule,
     AttachmentsModule,
+    NotificationsModule,
+    MailModule,
 
     DashboardModule,
     HealthModule,
@@ -87,6 +94,9 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Global guard: ทุก endpoint ต้อง login ก่อนเสมอ ยกเว้นที่ประกาศ @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Global guard: บล็อก user ที่ mustChangePassword=true ไม่ให้เรียก endpoint อื่นนอกจาก
+    // ที่ประกาศ @AllowPendingPasswordChange() ไว้ (บังคับที่ backend จริง ไม่ใช่แค่ redirect ฝั่ง UI)
+    { provide: APP_GUARD, useClass: PasswordChangeGuard },
     // Global guard: ตรวจ @RequirePermissions(...) ถ้ามีประกาศไว้
     { provide: APP_GUARD, useClass: PermissionsGuard },
     // Global filter ผ่าน DI (ต้องใช้ ClsService เพื่อ log requestId)

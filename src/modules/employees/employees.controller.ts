@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { PreRegisterEmployeeDto } from './dto/pre-register-employee.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 
 @ApiTags('employees')
@@ -15,6 +16,14 @@ export class EmployeesController {
   @RequirePermissions('employee.create')
   create(@Body() dto: CreateEmployeeDto) {
     return this.service.create(dto);
+  }
+
+  // ลงทะเบียนพนักงานใหม่ล่วงหน้า: สร้าง employee + user login + assign role ในทีเดียว
+  // ต้องมีสิทธิ์ครบทั้ง 3 อย่างเพราะทำ 3 การกระทำนี้พร้อมกัน
+  @Post('pre-register')
+  @RequirePermissions('employee.create', 'user.create', 'rbac.manage')
+  preRegister(@Body() dto: PreRegisterEmployeeDto) {
+    return this.service.preRegister(dto);
   }
 
   @Get()

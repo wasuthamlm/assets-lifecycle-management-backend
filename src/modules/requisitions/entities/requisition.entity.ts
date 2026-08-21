@@ -31,6 +31,7 @@ export class Requisition extends BaseEntity {
   requestType: RequestType;
 
   @Column({ type: 'enum', enum: ApprovalStatus, default: ApprovalStatus.PENDING })
+  @Index('IDX_requisitions_overall_status')
   overallStatus: ApprovalStatus;
 
   @Column({ type: 'date', nullable: true, comment: 'กำหนดคืน (เฉพาะ borrow)' })

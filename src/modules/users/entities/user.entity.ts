@@ -32,6 +32,20 @@ export class User extends BaseEntity {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
+  // true สำหรับ user ที่ยังใช้รหัสผ่านชั่วคราว/ที่ seed ให้ (เช่น admin) — บังคับเปลี่ยนก่อนใช้งานหน้าอื่น
+  @Column({ name: 'must_change_password', default: false })
+  mustChangePassword: boolean;
+
+  // เก็บ sha256(raw token) เพื่อให้ query หา user จาก token ที่ผู้ใช้ส่งกลับมาได้ตรงๆ (ต่างจาก refreshTokenHash
+  // ที่ใช้ argon2 เพราะที่นั่น verify เทียบกับ userId ที่รู้อยู่แล้วจาก JWT payload — ที่นี่ยังไม่รู้ userId ล่วงหน้า)
+  @Exclude()
+  @Column({ name: 'reset_password_token_hash', type: 'varchar', nullable: true })
+  resetPasswordTokenHash: string | null;
+
+  @Exclude()
+  @Column({ name: 'reset_password_expires_at', type: 'timestamp', nullable: true })
+  resetPasswordExpiresAt: Date | null;
+
   @Column({ name: 'employee_id', unique: true, nullable: true })
   employeeId: number;
 

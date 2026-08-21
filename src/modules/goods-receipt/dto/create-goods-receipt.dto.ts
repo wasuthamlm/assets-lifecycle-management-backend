@@ -16,7 +16,8 @@ class ReceiptAssetDataInput {
   @ApiProperty() @IsInt() categoryId: number;
   @ApiProperty() @IsString() assetName: string;
   @ApiPropertyOptional() @IsOptional() @IsString() serialNumber?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() brandModel?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() brand?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() model?: string;
   @ApiPropertyOptional() @IsOptional() @IsInt() vendorId?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) purchaseCost?: number;
   @ApiPropertyOptional() @IsOptional() @IsDateString() warrantyExpireDate?: string;

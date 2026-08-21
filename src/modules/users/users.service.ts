@@ -30,7 +30,7 @@ export class UsersService {
   }
 
   findAll() {
-    return this.repo.find({ relations: ['employee'] });
+    return this.repo.find({ relations: ['employee', 'employee.employeeRoles', 'employee.employeeRoles.role'] });
   }
 
   async findOne(id: number) {

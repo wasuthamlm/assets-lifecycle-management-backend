@@ -78,6 +78,14 @@ async function run() {
     console.log('  + role: employee');
   }
 
+  let hrRole = await roleRepo.findOne({ where: { roleName: 'hr' } });
+  if (!hrRole) {
+    hrRole = await roleRepo.save(
+      roleRepo.create({ roleName: 'hr', description: 'ฝ่ายบุคคล — ดูพนักงาน ทรัพย์สินที่ถืออยู่ และใบขอเบิก/ยืมทั้งหมด (ไม่แก้ไข/อนุมัติ)' }),
+    );
+    console.log('  + role: hr');
+  }
+
   // 3) Role-Permission mapping (idempotent: ลบของเดิมแล้วใส่ใหม่)
   await rolePermissionRepo.delete({ roleId: adminRole.roleId });
   await rolePermissionRepo.save(
@@ -89,6 +97,14 @@ async function run() {
   await rolePermissionRepo.delete({ roleId: employeeRole.roleId });
   await rolePermissionRepo.save(
     employeePermissions.map((p) => rolePermissionRepo.create({ roleId: employeeRole!.roleId, permissionId: p.permissionId })),
+  );
+
+  // hr เห็นได้เฉพาะหน้าที่เกี่ยวกับข้อมูลพนักงาน/ทรัพย์สินที่เกี่ยวข้อง — ไม่แตะ PO/สต๊อก/ซ่อมบำรุง/จำหน่ายทิ้ง/RBAC
+  const hrCodes = ['dashboard.view', 'employee.view_all', 'asset.view', 'requisition.view_all'];
+  const hrPermissions = permissionEntities.filter((p) => hrCodes.includes(p.permissionCode));
+  await rolePermissionRepo.delete({ roleId: hrRole.roleId });
+  await rolePermissionRepo.save(
+    hrPermissions.map((p) => rolePermissionRepo.create({ roleId: hrRole!.roleId, permissionId: p.permissionId })),
   );
   console.log('  ✓ mapped role_permissions');
 
@@ -140,9 +156,10 @@ async function run() {
         passwordHash: await argon2.hash('Admin@12345'),
         employeeId: adminEmployee.employeeId,
         isActive: true,
+        mustChangePassword: true,
       }),
     );
-    console.log('  + user login: admin / Admin@12345  (⚠️ เปลี่ยนรหัสผ่านทันทีหลังใช้งานจริง)');
+    console.log('  + user login: admin / Admin@12345  (ต้องเปลี่ยนรหัสผ่านทันทีตอน login ครั้งแรก)');
   }
 
   // 5) พนักงานทดสอบ role "employee" — ไว้เทสการมองเห็นหน้า UI ของผู้ใช้งานทั่วไป
@@ -179,12 +196,53 @@ async function run() {
         passwordHash: await argon2.hash('Test@12345'),
         employeeId: testEmployee.employeeId,
         isActive: true,
+        mustChangePassword: true,
       }),
     );
-    console.log('  + user login: test.employee / Test@12345  (role: employee — สำหรับเทส UI)');
+    console.log('  + user login: test.employee / Test@12345  (role: employee — สำหรับเทส UI, ต้องเปลี่ยนรหัสผ่านตอน login ครั้งแรก)');
   }
 
-  // 6) โดเมนที่อนุญาตให้ login ผ่าน Microsoft SSO (ยังไม่ได้ต่อ SSO จริง แต่เตรียมรายการไว้ก่อน)
+  // 6) พนักงานทดสอบ role "hr" — ไว้เทสสิทธิ์มุมมองฝ่ายบุคคล (ดูพนักงาน/ทรัพย์สิน/ใบขอเบิกทั้งหมด แบบอ่านอย่างเดียว)
+  let testHrEmployee = await employeeRepo.findOne({ where: { employeeCode: 'EMP-0003' } });
+  if (!testHrEmployee) {
+    testHrEmployee = await employeeRepo.save(
+      employeeRepo.create({
+        employeeCode: 'EMP-0003',
+        fullName: 'Test HR',
+        departmentId: itDept.departmentId,
+        position: 'HR Staff',
+        email: 'test.hr@millimed.local',
+      }),
+    );
+    console.log('  + employee: EMP-0003 (Test HR)');
+  }
+
+  const existingHrLink = await employeeRoleRepo.findOne({
+    where: { employeeId: testHrEmployee.employeeId, roleId: hrRole.roleId },
+  });
+  if (!existingHrLink) {
+    await employeeRoleRepo.save(
+      employeeRoleRepo.create({ employeeId: testHrEmployee.employeeId, roleId: hrRole.roleId, assignedDate: new Date() }),
+    );
+    console.log('  ✓ assigned role hr -> EMP-0003');
+  }
+
+  let testHrUser = await userRepo.findOne({ where: { username: 'test.hr' } });
+  if (!testHrUser) {
+    testHrUser = await userRepo.save(
+      userRepo.create({
+        username: 'test.hr',
+        email: 'test.hr@millimed.local',
+        passwordHash: await argon2.hash('Hr@12345678'),
+        employeeId: testHrEmployee.employeeId,
+        isActive: true,
+        mustChangePassword: true,
+      }),
+    );
+    console.log('  + user login: test.hr / Hr@12345678  (role: hr — สำหรับเทส UI, ต้องเปลี่ยนรหัสผ่านตอน login ครั้งแรก)');
+  }
+
+  // 7) โดเมนที่อนุญาตให้ login ผ่าน Microsoft SSO (ยังไม่ได้ต่อ SSO จริง แต่เตรียมรายการไว้ก่อน)
   let allowedDomain = await allowedDomainRepo.findOne({ where: { domain: 'millimedthailand.com' } });
   if (!allowedDomain) {
     allowedDomain = await allowedDomainRepo.save(

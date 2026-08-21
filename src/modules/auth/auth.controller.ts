@@ -1,12 +1,16 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
+import { AllowPendingPasswordChange } from '@common/decorators/allow-pending-password-change.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -30,15 +34,43 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  // จำกัดถี่เหมือน login กัน enumeration/spam อีเมล
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
+  @AllowPendingPasswordChange()
   @UseGuards(AuthGuard('jwt'))
   @Post('logout')
   logout(@CurrentUser() user) {
     return this.authService.logout(user.userId);
   }
 
+  @AllowPendingPasswordChange()
   @UseGuards(AuthGuard('jwt'))
   @Get('me')
   me(@CurrentUser() user) {
     return this.authService.me(user);
+  }
+
+  // ไม่ต้องมี @RequirePermissions — ทำกับบัญชีตัวเองเท่านั้น เหมือน /auth/me
+  @AllowPendingPasswordChange()
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  @Patch('change-password')
+  changePassword(@CurrentUser() user, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.userId, dto);
   }
 }

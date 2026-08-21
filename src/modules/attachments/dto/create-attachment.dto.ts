@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsInt, IsOptional, IsString, IsUrl } from 'class-validator';
 
-const ATTACHMENT_REFERENCE_TYPES = [
+export const ATTACHMENT_REFERENCE_TYPES = [
   'asset',
   'requisition',
   'repair',

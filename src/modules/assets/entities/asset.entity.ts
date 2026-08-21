@@ -39,7 +39,10 @@ export class Asset extends BaseEntity {
   serialNumber: string;
 
   @Column({ nullable: true })
-  brandModel: string;
+  brand: string;
+
+  @Column({ nullable: true })
+  model: string;
 
   @Column({ name: 'vendor_id', nullable: true, comment: 'ผู้ขายตอนซื้อ' })
   vendorId: number;

@@ -1,12 +1,23 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestType } from '@common/enums';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDateString, IsEnum, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 
 class RequisitionItemInput {
   @ApiPropertyOptional() @IsOptional() @IsInt() assetId?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() stockItemId?: number;
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) quantity?: number;
+  @ApiProperty() @IsInt() @Min(1) quantity: number;
 }
 
 export class CreateRequisitionDto {
@@ -14,11 +25,17 @@ export class CreateRequisitionDto {
   @IsEnum(RequestType)
   requestType: RequestType;
 
-  @ApiPropertyOptional() @IsOptional() @IsDateString() dueDate?: string;
+  // บังคับกรอกเฉพาะตอน requestType = borrow — ValidateIf เท่านั้น ไม่ใส่ @IsOptional() เพื่อให้ @IsDateString() ทำงานตอน borrow
+  @ApiPropertyOptional({ description: 'บังคับกรอกเมื่อ requestType = borrow' })
+  @ValidateIf((o) => o.requestType === RequestType.BORROW)
+  @IsDateString()
+  dueDate?: string;
+
   @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;
 
   @ApiProperty({ type: [RequisitionItemInput] })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => RequisitionItemInput)
   items: RequisitionItemInput[];
