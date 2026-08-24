@@ -4,7 +4,5 @@ dist/
 README copy.md
 PROJECT_STRUCTURE.md
 
-Dockerfile
-
 .vscode/
 .github/workflows/
