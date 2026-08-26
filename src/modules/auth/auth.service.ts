@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -6,12 +6,19 @@ import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
 import { randomBytes, createHash } from 'crypto';
 import { User } from '../users/entities/user.entity';
+import { Employee } from '../employees/entities/employee.entity';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SsoExchangeDto } from './dto/sso-exchange.dto';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailService } from '../mail/mail.service';
+import { AllowedDomainsService } from '../allowed-domains/allowed-domains.service';
+import { SupabaseIdentityService } from './supabase-identity.service';
+
+/** Postgres unique_violation — ดู AuthService.findOrProvisionSsoUser */
+const PG_UNIQUE_VIOLATION = '23505';
 
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 
@@ -30,15 +37,19 @@ export class AuthService {
 
   constructor(
     @InjectRepository(User) private usersRepo: Repository<User>,
+    @InjectRepository(Employee) private employeesRepo: Repository<Employee>,
     private jwtService: JwtService,
     private config: ConfigService,
     private jwtStrategy: JwtStrategy,
     private mailService: MailService,
+    private allowedDomainsService: AllowedDomainsService,
+    private supabaseIdentity: SupabaseIdentityService,
   ) {}
 
   async login(dto: LoginDto) {
     const user = await this.usersRepo.findOne({ where: { username: dto.username } });
-    if (!user || !user.isActive) {
+    // passwordHash เป็น null สำหรับบัญชีที่ login ผ่าน Microsoft SSO เท่านั้น (Supabase Auth) — ไม่มีรหัสผ่านในระบบนี้
+    if (!user || !user.isActive || !user.passwordHash) {
       throw new UnauthorizedException('username หรือ password ไม่ถูกต้อง');
     }
 
@@ -69,6 +80,84 @@ export class AuthService {
     return this.issueTokens(user);
   }
 
+  /**
+   * แลก Supabase access token (ได้จาก frontend หลัง login ผ่าน Microsoft SSO) เป็น JWT ของระบบเราเอง
+   * ตรวจ identity ผ่าน Supabase เอง (SupabaseIdentityService) ไม่เชื่อ claim ใน token ตรงๆ —
+   * ป้องกันกรณีมีคนสมัคร Supabase Auth ตรงด้วยอีเมลที่ปลอมโดเมนให้ตรง allowlist (ไม่ได้ผ่าน Microsoft จริง)
+   */
+  async loginWithSso(dto: SsoExchangeDto) {
+    const identity = await this.supabaseIdentity.verifyAccessToken(dto.accessToken);
+
+    if (identity.provider !== 'azure') {
+      throw new UnauthorizedException('รองรับเฉพาะ login ผ่าน Microsoft SSO เท่านั้น');
+    }
+
+    const email = identity.email?.toLowerCase();
+    if (!email) throw new UnauthorizedException('ไม่พบอีเมลจากบัญชี Microsoft');
+
+    // เช็ค allowlist ทุกครั้งที่ login (ไม่ใช่แค่ตอนสร้างบัญชีครั้งแรก) เพื่อให้ถอดโดเมนออกจาก allowlist
+    // ภายหลังมีผลปิดกั้น login รอบถัดไปได้จริง
+    const domainAllowed = await this.allowedDomainsService.isDomainAllowed(email);
+    if (!domainAllowed) {
+      throw new UnauthorizedException('โดเมนอีเมลนี้ไม่ได้รับอนุญาตให้ login ผ่าน Microsoft SSO');
+    }
+
+    const user = await this.findOrProvisionSsoUser(identity.supabaseUserId, email);
+    if (!user.isActive) throw new UnauthorizedException('บัญชีนี้ถูกระงับการใช้งาน');
+
+    return this.issueTokens(user);
+  }
+
+  /**
+   * หา user ที่ผูกกับ Supabase identity นี้อยู่แล้ว ไม่เจอค่อย link เข้ากับบัญชี local เดิมที่ตรงอีเมล/username
+   * (ถ้ามี) หรือสร้างใหม่ พร้อม link employeeId จาก employees.email ที่ตรงกัน
+   *
+   * บัญชีที่สร้างใหม่ "ต้อง" ผูกกับ employee ได้เท่านั้น (fail closed) — ไม่งั้นจะได้ user ที่ login ผ่านได้
+   * แต่ permissions/roles ว่างเปล่า (มาจาก employee.employeeRoles) แล้วโดน 403 ทุก endpoint แบบไม่มีคำอธิบาย
+   * ให้ตัดจบตรงนี้เลยว่ายังไม่มีข้อมูลพนักงานรองรับ ดีกว่าปล่อยให้ authenticate สำเร็จแล้วใช้งานไม่ได้
+   *
+   * ครอบ try/catch unique-violation ไว้ เพราะ login รอบแรกอาจมีหลาย request มาพร้อมกัน (frontend ยิงซ้ำ)
+   */
+  private async findOrProvisionSsoUser(supabaseUserId: string, email: string): Promise<User> {
+    const existing = await this.usersRepo.findOne({ where: { supabaseUserId } });
+    if (existing) return existing;
+
+    const linkTarget = await this.usersRepo.findOne({ where: [{ email }, { username: email }] });
+
+    let toSave: User;
+    if (linkTarget) {
+      toSave = linkTarget;
+    } else {
+      const employee = await this.employeesRepo.findOne({ where: { email } });
+      if (!employee) {
+        throw new UnauthorizedException(
+          'ไม่พบข้อมูลพนักงานที่ผูกกับอีเมลนี้ในระบบ กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มข้อมูลพนักงานก่อน login ผ่าน Microsoft SSO',
+        );
+      }
+      toSave = this.usersRepo.create({
+        username: email,
+        email,
+        isActive: true,
+        mustChangePassword: false,
+        employeeId: employee.employeeId,
+      });
+    }
+    toSave.supabaseUserId = supabaseUserId;
+
+    try {
+      return await this.usersRepo.save(toSave);
+    } catch (err) {
+      if (err?.code !== PG_UNIQUE_VIOLATION) throw err;
+
+      // อีก request คู่ขนานสร้าง/link ไปสำเร็จก่อนแล้ว — ดึงตัวนั้นมาใช้แทน
+      const raceWinner = await this.usersRepo.findOne({ where: { supabaseUserId } });
+      if (raceWinner) return raceWinner;
+
+      // ไม่ใช่ race ของ supabaseUserId — เช่น employeeId ที่ auto-link ไปนั้นถูกผูกกับ user อื่นไปแล้วพอดี
+      throw new ConflictException('ไม่สามารถสร้างบัญชีสำหรับ Microsoft SSO ได้ (ข้อมูลชนกัน) กรุณาติดต่อผู้ดูแลระบบ');
+    }
+  }
+
   async logout(userId: number) {
     await this.usersRepo.update({ userId }, { refreshTokenHash: null });
     return { success: true };
@@ -77,6 +166,9 @@ export class AuthService {
   async changePassword(userId: number, dto: ChangePasswordDto) {
     const user = await this.usersRepo.findOne({ where: { userId } });
     if (!user) throw new UnauthorizedException();
+
+    // บัญชี Microsoft SSO ล้วน (ไม่เคยตั้งรหัสผ่านในระบบนี้) ไม่มีอะไรให้เทียบ "รหัสผ่านปัจจุบัน" ได้
+    if (!user.passwordHash) throw new UnauthorizedException('บัญชีนี้ login ผ่าน Microsoft SSO ไม่สามารถเปลี่ยนรหัสผ่านที่นี่ได้');
 
     const currentOk = await argon2.verify(user.passwordHash, dto.currentPassword);
     if (!currentOk) throw new UnauthorizedException('รหัสผ่านปัจจุบันไม่ถูกต้อง');

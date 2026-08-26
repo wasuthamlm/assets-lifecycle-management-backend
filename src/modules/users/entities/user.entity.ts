@@ -21,9 +21,14 @@ export class User extends BaseEntity {
   email: string;
 
   // @Exclude กัน hash หลุดออกไปใน response ทุกจุดที่คืน entity นี้ตรงๆ ผ่าน ClassSerializerInterceptor (ดู main.ts)
+  // nullable เพราะ user ที่ login ผ่าน Microsoft SSO (Supabase Auth) ไม่มีรหัสผ่านของระบบเอง
   @Exclude()
-  @Column({ name: 'password_hash' })
-  passwordHash: string;
+  @Column({ name: 'password_hash', type: 'varchar', nullable: true })
+  passwordHash: string | null;
+
+  // uuid ของ user ใน Supabase Auth (auth.users.id) — มีค่าเฉพาะ user ที่เคย login ผ่าน Microsoft SSO เท่านั้น
+  @Column({ name: 'supabase_user_id', type: 'uuid', unique: true, nullable: true })
+  supabaseUserId: string | null;
 
   @Exclude()
   @Column({ name: 'refresh_token_hash', nullable: true, type: 'text' })

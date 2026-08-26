@@ -38,6 +38,9 @@ export const envValidationSchema = Joi.object({
   SUPABASE_URL: Joi.string().optional().allow(''),
   SUPABASE_SERVICE_ROLE_KEY: Joi.string().optional().allow(''),
   SUPABASE_STORAGE_BUCKET: Joi.string().default('attachments'),
+  // Microsoft SSO login ผ่าน Supabase Auth ใช้ SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY ข้างบนนี้อยู่แล้ว
+  // (SupabaseIdentityService เรียก auth.getUser ให้ Supabase เป็นคน verify token เอง ไม่ต้องมี secret แยก)
+  // ฝั่ง frontend ต้องตั้ง VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY เองใน repo ของตัวเอง
 
   // อีเมลแจ้งเตือน — ถ้าไม่ใส่ SMTP_HOST ระบบจะ log แทนการส่งจริง (ดู MailService)
   SMTP_HOST: Joi.string().optional().allow(''),

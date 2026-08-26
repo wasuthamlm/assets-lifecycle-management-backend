@@ -8,6 +8,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SsoExchangeDto } from './dto/sso-exchange.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AllowPendingPasswordChange } from '@common/decorators/allow-pending-password-change.decorator';
@@ -49,6 +50,16 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  // login ผ่าน Microsoft SSO: frontend ทำ OAuth flow กับ Supabase เอง แล้วส่ง access token ที่ได้มาแลกเป็น
+  // JWT ของระบบเราต่อที่นี่ (ดู AuthService.loginWithSso)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('sso/exchange')
+  ssoExchange(@Body() dto: SsoExchangeDto) {
+    return this.authService.loginWithSso(dto);
   }
 
   @AllowPendingPasswordChange()

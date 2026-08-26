@@ -39,6 +39,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
+  // หมายเหตุ: login ผ่าน Microsoft SSO (Supabase Auth) ก็จบด้วย token ที่ผ่านตรงนี้เหมือนกัน —
+  // AuthService.loginWithSso() แลก Supabase token เป็น JWT ของระบบเราเองใน issueTokens() ก่อนแล้ว
+  // ที่นี่จึงไม่ต้องรู้จัก/verify Supabase token เลย (ดู AuthService.loginWithSso, SupabaseIdentityService)
   async validate(payload: { sub: number; username: string }): Promise<ValidatedUser> {
     const cached = this.cache.get(payload.sub);
     if (cached && cached.expiresAt > Date.now()) return cached.value;

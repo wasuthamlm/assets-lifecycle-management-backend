@@ -4,17 +4,21 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { User } from '../users/entities/user.entity';
+import { Employee } from '../employees/entities/employee.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
+import { AllowedDomainsModule } from '../allowed-domains/allowed-domains.module';
+import { SupabaseIdentityService } from './supabase-identity.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Employee]),
     PassportModule,
     ConfigModule,
     MailModule,
+    AllowedDomainsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -25,7 +29,7 @@ import { MailModule } from '../mail/mail.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, SupabaseIdentityService],
   exports: [AuthService],
 })
 export class AuthModule {}
