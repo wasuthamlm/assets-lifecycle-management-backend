@@ -32,8 +32,8 @@ export class EmployeesController {
     return this.service.findAll();
   }
 
-  // รายชื่อพนักงานแบบย่อ (id + ชื่อ) ไว้ใช้เลือกผู้ขอเบิก/ผู้อนุมัติในฟอร์ม —
-  // เปิดให้ user ที่ login แล้วทุกคนเรียกได้ ไม่ต้องมีสิทธิ์ employee.view_all
+  // รายชื่อพนักงานที่มีสิทธิ์ requisition.approve เท่านั้น (แบบย่อ id + ชื่อ) ไว้เลือกผู้อนุมัติในฟอร์ม —
+  // เปิดให้ user ที่ login แล้วทุกคนเรียกได้ ไม่ต้องมีสิทธิ์ employee.view_all (ดู EmployeesService.findDirectory)
   @Get('directory')
   directory() {
     return this.service.findDirectory();

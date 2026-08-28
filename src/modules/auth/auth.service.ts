@@ -7,15 +7,19 @@ import * as argon2 from 'argon2';
 import { randomBytes, createHash } from 'crypto';
 import { User } from '../users/entities/user.entity';
 import { Employee } from '../employees/entities/employee.entity';
+import { Department } from '../departments/entities/department.entity';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SsoExchangeDto } from './dto/sso-exchange.dto';
+import { CompleteEmployeeProfileDto } from './dto/complete-employee-profile.dto';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailService } from '../mail/mail.service';
 import { AllowedDomainsService } from '../allowed-domains/allowed-domains.service';
 import { SupabaseIdentityService } from './supabase-identity.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '@common/enums';
 
 /** Postgres unique_violation — ดู AuthService.findOrProvisionSsoUser */
 const PG_UNIQUE_VIOLATION = '23505';
@@ -44,6 +48,8 @@ export class AuthService {
     private mailService: MailService,
     private allowedDomainsService: AllowedDomainsService,
     private supabaseIdentity: SupabaseIdentityService,
+    private notificationsService: NotificationsService,
+    @InjectRepository(Department) private departmentsRepo: Repository<Department>,
   ) {}
 
   async login(dto: LoginDto) {
@@ -102,7 +108,7 @@ export class AuthService {
       throw new UnauthorizedException('โดเมนอีเมลนี้ไม่ได้รับอนุญาตให้ login ผ่าน Microsoft SSO');
     }
 
-    const user = await this.findOrProvisionSsoUser(identity.supabaseUserId, email);
+    const user = await this.findOrProvisionSsoUser(identity.supabaseUserId, email, identity.fullName);
     if (!user.isActive) throw new UnauthorizedException('บัญชีนี้ถูกระงับการใช้งาน');
 
     return this.issueTokens(user);
@@ -110,39 +116,39 @@ export class AuthService {
 
   /**
    * หา user ที่ผูกกับ Supabase identity นี้อยู่แล้ว ไม่เจอค่อย link เข้ากับบัญชี local เดิมที่ตรงอีเมล/username
-   * (ถ้ามี) หรือสร้างใหม่ พร้อม link employeeId จาก employees.email ที่ตรงกัน
+   * (ถ้ามี) หรือสร้างใหม่ พร้อมพยายาม auto-link employeeId จาก employees.email ที่ตรงกัน (ถ้ามี)
    *
-   * บัญชีที่สร้างใหม่ "ต้อง" ผูกกับ employee ได้เท่านั้น (fail closed) — ไม่งั้นจะได้ user ที่ login ผ่านได้
-   * แต่ permissions/roles ว่างเปล่า (มาจาก employee.employeeRoles) แล้วโดน 403 ทุก endpoint แบบไม่มีคำอธิบาย
-   * ให้ตัดจบตรงนี้เลยว่ายังไม่มีข้อมูลพนักงานรองรับ ดีกว่าปล่อยให้ authenticate สำเร็จแล้วใช้งานไม่ได้
+   * ไม่ fail-closed ตอนหา employee ไม่เจอ — login ผ่านได้เสมอตราบใดที่ผ่าน Azure AD + โดเมนจริง (isDomainAllowed
+   * เช็คใน loginWithSso ก่อนเรียกฟังก์ชันนี้แล้ว) ผลคือถ้ายังไม่มี employee record ตรงกัน user จะ login เข้าได้
+   * แต่ permissions/roles ว่างเปล่าจนกว่า admin จะ PATCH /users/:id ผูก employeeId ให้ทีหลัง (ดู UsersService.update)
    *
    * ครอบ try/catch unique-violation ไว้ เพราะ login รอบแรกอาจมีหลาย request มาพร้อมกัน (frontend ยิงซ้ำ)
    */
-  private async findOrProvisionSsoUser(supabaseUserId: string, email: string): Promise<User> {
+  private async findOrProvisionSsoUser(supabaseUserId: string, email: string, fullName: string | null): Promise<User> {
     const existing = await this.usersRepo.findOne({ where: { supabaseUserId } });
-    if (existing) return existing;
+    if (existing) {
+      // sync ชื่อจาก Azure AD ทุก login เผื่อมีการเปลี่ยนชื่อทีหลัง — ไม่เขียนทับด้วย null ถ้ารอบนี้ไม่มีค่าส่งมา
+      if (fullName && fullName !== existing.fullName) {
+        existing.fullName = fullName;
+        return this.usersRepo.save(existing);
+      }
+      return existing;
+    }
 
     const linkTarget = await this.usersRepo.findOne({ where: [{ email }, { username: email }] });
+    const employee = linkTarget ? null : await this.employeesRepo.findOne({ where: { email } });
 
-    let toSave: User;
-    if (linkTarget) {
-      toSave = linkTarget;
-    } else {
-      const employee = await this.employeesRepo.findOne({ where: { email } });
-      if (!employee) {
-        throw new UnauthorizedException(
-          'ไม่พบข้อมูลพนักงานที่ผูกกับอีเมลนี้ในระบบ กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มข้อมูลพนักงานก่อน login ผ่าน Microsoft SSO',
-        );
-      }
-      toSave = this.usersRepo.create({
+    const toSave =
+      linkTarget ??
+      this.usersRepo.create({
         username: email,
         email,
         isActive: true,
         mustChangePassword: false,
-        employeeId: employee.employeeId,
+        employeeId: employee?.employeeId ?? undefined,
       });
-    }
     toSave.supabaseUserId = supabaseUserId;
+    if (fullName && !toSave.fullName) toSave.fullName = fullName;
 
     try {
       return await this.usersRepo.save(toSave);
@@ -155,6 +161,96 @@ export class AuthService {
 
       // ไม่ใช่ race ของ supabaseUserId — เช่น employeeId ที่ auto-link ไปนั้นถูกผูกกับ user อื่นไปแล้วพอดี
       throw new ConflictException('ไม่สามารถสร้างบัญชีสำหรับ Microsoft SSO ได้ (ข้อมูลชนกัน) กรุณาติดต่อผู้ดูแลระบบ');
+    }
+  }
+
+  /**
+   * ให้ user ที่ login ผ่าน Microsoft SSO แล้วยังไม่มี employee ผูกอยู่ (employeeId เป็น null) กรอกข้อมูล
+   * พนักงานของตัวเองเพื่อสร้าง employee record ครั้งแรก — ทำได้แค่ครั้งเดียวต่อบัญชี (ไม่ใช่ endpoint แก้ไขทั่วไป
+   * ดู EmployeesController.update สำหรับแก้ไขข้อมูลพนักงานที่มีอยู่แล้ว ซึ่งต้องมีสิทธิ์ employee.update)
+   *
+   * ไม่ให้ permissions/roles เพิ่มขึ้นจากตรงนี้ — ยังต้องรอ admin ไป assign role ให้ทีหลังเหมือนเดิม
+   * (ดู findOrProvisionSsoUser) กรอกข้อมูลผิดจึงมีผลแค่ข้อมูล HR คลาดเคลื่อน ไม่กระทบสิทธิ์การเข้าถึง
+   */
+  async completeEmployeeProfile(userId: number, dto: CompleteEmployeeProfileDto) {
+    const user = await this.usersRepo.findOne({ where: { userId } });
+    if (!user) throw new UnauthorizedException();
+    if (user.employeeId) {
+      throw new ConflictException('บัญชีนี้ผูกกับข้อมูลพนักงานอยู่แล้ว กรุณาติดต่อผู้ดูแลระบบหากต้องการแก้ไข');
+    }
+
+    const existingCode = await this.employeesRepo.findOne({ where: { employeeCode: dto.employeeCode } });
+    if (existingCode) throw new ConflictException('รหัสพนักงานนี้ถูกใช้ไปแล้ว');
+
+    const departmentId = await this.resolveDepartmentId(dto);
+
+    const employee = await this.employeesRepo.save(
+      this.employeesRepo.create({
+        employeeCode: dto.employeeCode,
+        fullName: dto.fullName,
+        departmentId,
+        position: dto.position,
+        phone: dto.phone,
+        email: user.email,
+      }),
+    );
+
+    user.employeeId = employee.employeeId;
+    await this.usersRepo.save(user);
+    this.jwtStrategy.invalidate(userId);
+
+    await this.notifyAdminsOfNewEmployeeProfile(employee);
+
+    return { success: true };
+  }
+
+  /**
+   * ถ้า user พิมพ์แผนกใหม่มา (newDepartmentName) — reuse แผนกที่ชื่อตรงกันอยู่แล้ว (ไม่สนตัวพิมพ์เล็กใหญ่/เว้นวรรคหัวท้าย
+   * กันสร้างซ้ำซ้อนเวลาหลายคนพิมพ์ชื่อเดียวกัน) ถ้าไม่เจอค่อยสร้างใหม่ — ให้ความสำคัญกว่า departmentId ที่ส่งมาด้วยกัน
+   */
+  private async resolveDepartmentId(dto: CompleteEmployeeProfileDto): Promise<number | undefined> {
+    const name = dto.newDepartmentName?.trim();
+    if (!name) return dto.departmentId;
+
+    const existing = await this.departmentsRepo
+      .createQueryBuilder('d')
+      .where('lower(d.departmentName) = lower(:name)', { name })
+      .getOne();
+    if (existing) return existing.departmentId;
+
+    const created = await this.departmentsRepo.save(this.departmentsRepo.create({ departmentName: name }));
+    return created.departmentId;
+  }
+
+  /**
+   * แจ้งเตือนคนที่มี role it_admin (ผู้ดูแลระบบ IT) ว่ามี user กรอกข้อมูลพนักงานของตัวเองเสร็จแล้ว
+   * เพื่อเตือนให้ไปกำหนด role ให้ต่อ — ไม่งั้น user คนนี้ login เข้ามาได้แต่ permissions ยังว่างเปล่าอยู่ดี
+   * (ดู completeEmployeeProfile) best-effort เหมือน NotificationsService.notify() เอง ห้ามให้ล้มเหลวตรงนี้
+   * ทำให้การผูก employee ที่สำเร็จไปแล้วก่อนหน้ากลายเป็น error กับ caller
+   */
+  private async notifyAdminsOfNewEmployeeProfile(employee: Employee) {
+    try {
+      const admins = await this.employeesRepo
+        .createQueryBuilder('e')
+        .innerJoin('e.employeeRoles', 'er')
+        .innerJoin('er.role', 'r')
+        .where('r.roleName = :roleName', { roleName: 'it_admin' })
+        .getMany();
+
+      await Promise.all(
+        admins.map((admin) =>
+          this.notificationsService.notify(
+            admin.employeeId,
+            NotificationType.EMPLOYEE_PROFILE_COMPLETED,
+            'มีพนักงานใหม่รอกำหนดสิทธิ์',
+            `${employee.fullName} (${employee.employeeCode}) กรอกข้อมูลพนักงานของตัวเองเสร็จแล้วหลัง login ครั้งแรก กรุณากำหนดบทบาท/สิทธิ์ให้`,
+            'employee',
+            employee.employeeId,
+          ),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(`แจ้งเตือน admin เรื่อง employee profile ใหม่ไม่สำเร็จ: ${(err as Error).message}`);
     }
   }
 
@@ -239,6 +335,9 @@ export class AuthService {
       userId: user.userId,
       username: user.username,
       email: user.email,
+      // ชื่อพนักงานตัวจริง (HR) มาก่อนเสมอถ้ามี ไม่งั้น fallback ไปใช้ชื่อจาก Azure AD ที่ sync ไว้ตอน login SSO
+      // (ดู findOrProvisionSsoUser) — frontend ค่อย fallback ไป email เองอีกชั้นถ้าทั้งคู่เป็น null
+      fullName: user.employee?.fullName ?? user.fullName,
       employeeId: user.employeeId,
       mustChangePassword: user.mustChangePassword,
       permissions: currentUser.permissions,

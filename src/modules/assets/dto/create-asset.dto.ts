@@ -11,10 +11,6 @@ import {
 } from 'class-validator';
 
 export class CreateAssetDto {
-  @ApiProperty({ example: 'FA-2026-00123' })
-  @IsString()
-  assetNo: string;
-
   @ApiProperty()
   @IsInt()
   categoryId: number;

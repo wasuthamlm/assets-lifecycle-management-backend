@@ -10,6 +10,8 @@ import { CreateRoleDto } from './dto/create-role.dto';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { AssignPermissionsDto } from './dto/assign-permission.dto';
 import { AssignRolesDto } from './dto/assign-role.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '@common/enums';
 
 @Injectable()
 export class RolesPermissionsService {
@@ -20,6 +22,7 @@ export class RolesPermissionsService {
     @InjectRepository(EmployeeRole) private employeeRoleRepo: Repository<EmployeeRole>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private dataSource: DataSource,
+    private notificationsService: NotificationsService,
   ) {}
 
   // ---- Roles ----
@@ -87,10 +90,23 @@ export class RolesPermissionsService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       await manager.delete(EmployeeRole, { employeeId });
       const rows = dto.roleIds.map((roleId) => manager.create(EmployeeRole, { employeeId, roleId, assignedDate: new Date() }));
       return manager.save(rows);
     });
+
+    // แจ้งเจ้าตัวทันทีที่ role เปลี่ยน — ฝั่ง frontend ใช้ตรงนี้ auto-refresh /auth/me เอง
+    // (ดู useNotificationsStream) กันไม่ให้ user ที่รอ permission อยู่ต้องกด refresh เอง
+    await this.notificationsService.notify(
+      employeeId,
+      NotificationType.PERMISSIONS_UPDATED,
+      'สิทธิ์การใช้งานของคุณได้รับการอัปเดต',
+      `${employee.fullName} ได้รับการกำหนดบทบาท/สิทธิ์การใช้งานใหม่แล้ว`,
+      'employee',
+      employeeId,
+    );
+
+    return result;
   }
 }

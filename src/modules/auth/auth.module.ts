@@ -5,20 +5,23 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { User } from '../users/entities/user.entity';
 import { Employee } from '../employees/entities/employee.entity';
+import { Department } from '../departments/entities/department.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
 import { AllowedDomainsModule } from '../allowed-domains/allowed-domains.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { SupabaseIdentityService } from './supabase-identity.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee]),
+    TypeOrmModule.forFeature([User, Employee, Department]),
     PassportModule,
     ConfigModule,
     MailModule,
     AllowedDomainsModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

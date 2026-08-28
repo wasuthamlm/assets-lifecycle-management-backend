@@ -96,4 +96,6 @@ export enum NotificationType {
   REQUISITION_REJECTED = 'requisition_rejected',
   WARRANTY_EXPIRING = 'warranty_expiring',
   ASSIGNMENT_OVERDUE = 'assignment_overdue',
+  EMPLOYEE_PROFILE_COMPLETED = 'employee_profile_completed',
+  PERMISSIONS_UPDATED = 'permissions_updated',
 }

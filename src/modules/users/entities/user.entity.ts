@@ -51,6 +51,11 @@ export class User extends BaseEntity {
   @Column({ name: 'reset_password_expires_at', type: 'timestamp', nullable: true })
   resetPasswordExpiresAt: Date | null;
 
+  // ชื่อที่ได้จาก Azure AD (given_name + family_name) ตอน login SSO — ใช้แสดงผลก่อนที่ employee record
+  // จะถูกผูก/สร้าง (ดู AuthService.findOrProvisionSsoUser, AuthService.me) ไม่ใช่ข้อมูล HR ที่เป็นทางการ
+  @Column({ name: 'full_name', type: 'varchar', nullable: true })
+  fullName: string | null;
+
   @Column({ name: 'employee_id', unique: true, nullable: true })
   employeeId: number;
 

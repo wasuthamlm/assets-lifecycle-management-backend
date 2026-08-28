@@ -39,4 +39,15 @@ export class NotificationsController {
   markAllRead(@CurrentUser() user: CurrentUserPayload) {
     return this.service.markAllRead(requireEmployeeId(user));
   }
+
+  // "ลบ" ในมุมมองผู้ใช้ — ซ่อนออกจากรายการเฉยๆ ไม่ได้ลบแถวจริง (ดู NotificationsService.dismiss)
+  @Post(':id/dismiss')
+  dismiss(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.dismiss(id, requireEmployeeId(user));
+  }
+
+  @Post('dismiss-all')
+  dismissAll(@CurrentUser() user: CurrentUserPayload) {
+    return this.service.dismissAll(requireEmployeeId(user));
+  }
 }

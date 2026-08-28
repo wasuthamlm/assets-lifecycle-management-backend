@@ -9,6 +9,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SsoExchangeDto } from './dto/sso-exchange.dto';
+import { CompleteEmployeeProfileDto } from './dto/complete-employee-profile.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AllowPendingPasswordChange } from '@common/decorators/allow-pending-password-change.decorator';
@@ -83,5 +84,14 @@ export class AuthController {
   @Patch('change-password')
   changePassword(@CurrentUser() user, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user.userId, dto);
+  }
+
+  // ให้ user ที่ login ผ่าน Microsoft SSO แล้วยังไม่มี employee ผูกอยู่ กรอกข้อมูลพนักงานของตัวเองครั้งแรก
+  // ไม่ต้องมี @RequirePermissions เหมือนกัน — ทำกับบัญชีตัวเองเท่านั้น (ดู AuthService.completeEmployeeProfile)
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  @Post('me/employee-profile')
+  completeEmployeeProfile(@CurrentUser() user, @Body() dto: CompleteEmployeeProfileDto) {
+    return this.authService.completeEmployeeProfile(user.userId, dto);
   }
 }

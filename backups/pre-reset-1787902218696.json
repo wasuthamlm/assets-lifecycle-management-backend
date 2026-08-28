@@ -1,0 +1,1367 @@
+{
+  "assets": [
+    {
+      "created_at": "2026-07-27T01:38:42.408Z",
+      "updated_at": "2026-07-27T01:39:01.943Z",
+      "asset_id": 4,
+      "asset_no": "AST-TEST-01",
+      "category_id": 1,
+      "asset_name": "Test Monitor",
+      "serial_number": null,
+      "vendor_id": null,
+      "purchase_date": null,
+      "purchase_cost": null,
+      "warranty_expire_date": null,
+      "current_status": "disposed",
+      "current_location_id": null,
+      "current_holder_type": null,
+      "current_holder_id": null,
+      "attributes": null,
+      "notes": null,
+      "created_by": null,
+      "brand": null,
+      "model": null
+    },
+    {
+      "created_at": "2026-07-27T01:39:37.076Z",
+      "updated_at": "2026-07-27T01:39:37.076Z",
+      "asset_id": 5,
+      "asset_no": "AST-FROM-PO-1",
+      "category_id": 1,
+      "asset_name": "Mouse Logitech",
+      "serial_number": null,
+      "vendor_id": null,
+      "purchase_date": "2026-07-26T17:00:00.000Z",
+      "purchase_cost": null,
+      "warranty_expire_date": null,
+      "current_status": "in_stock",
+      "current_location_id": 1,
+      "current_holder_type": null,
+      "current_holder_id": null,
+      "attributes": null,
+      "notes": null,
+      "created_by": 1,
+      "brand": null,
+      "model": null
+    },
+    {
+      "created_at": "2026-07-24T01:23:17.832Z",
+      "updated_at": "2026-07-27T02:07:20.104Z",
+      "asset_id": 1,
+      "asset_no": "AST-0001",
+      "category_id": 1,
+      "asset_name": "Dell Latitude 5420",
+      "serial_number": "SN12345",
+      "vendor_id": null,
+      "purchase_date": null,
+      "purchase_cost": "25000.00",
+      "warranty_expire_date": null,
+      "current_status": "in_stock",
+      "current_location_id": null,
+      "current_holder_type": null,
+      "current_holder_id": null,
+      "attributes": null,
+      "notes": null,
+      "created_by": null,
+      "brand": null,
+      "model": null
+    },
+    {
+      "created_at": "2026-07-24T01:23:45.483Z",
+      "updated_at": "2026-07-27T01:39:09.658Z",
+      "asset_id": 2,
+      "asset_no": "AST-0002",
+      "category_id": 1,
+      "asset_name": "Dell Latitude 5430",
+      "serial_number": "SN99999",
+      "vendor_id": null,
+      "purchase_date": null,
+      "purchase_cost": "26000.00",
+      "warranty_expire_date": "2027-12-31T17:00:00.000Z",
+      "current_status": "in_stock",
+      "current_location_id": null,
+      "current_holder_type": null,
+      "current_holder_id": null,
+      "attributes": null,
+      "notes": null,
+      "created_by": null,
+      "brand": null,
+      "model": null
+    },
+    {
+      "created_at": "2026-07-27T01:25:14.676Z",
+      "updated_at": "2026-07-27T01:25:14.676Z",
+      "asset_id": 3,
+      "asset_no": "FA-2026-00123",
+      "category_id": 1,
+      "asset_name": "Notebook Dell Latitude",
+      "serial_number": "SN-ABC1",
+      "vendor_id": 1,
+      "purchase_date": "2026-06-30T17:00:00.000Z",
+      "purchase_cost": "25000.00",
+      "warranty_expire_date": "2029-06-30T17:00:00.000Z",
+      "current_status": "in_stock",
+      "current_location_id": null,
+      "current_holder_type": null,
+      "current_holder_id": null,
+      "attributes": null,
+      "notes": "",
+      "created_by": null,
+      "brand": "Latitude 5420",
+      "model": null
+    },
+    {
+      "created_at": "2026-08-27T00:46:36.741Z",
+      "updated_at": "2026-08-27T00:46:36.741Z",
+      "asset_id": 6,
+      "asset_no": "1234",
+      "category_id": 5,
+      "asset_name": "โทรศัพท์มือถือ",
+      "serial_number": "123456789",
+      "vendor_id": null,
+      "purchase_date": null,
+      "purchase_cost": null,
+      "warranty_expire_date": null,
+      "current_status": "in_stock",
+      "current_location_id": null,
+      "current_holder_type": null,
+      "current_holder_id": null,
+      "attributes": null,
+      "notes": "",
+      "created_by": null,
+      "brand": "Apple",
+      "model": "iPhone"
+    },
+    {
+      "created_at": "2026-08-27T01:14:32.673Z",
+      "updated_at": "2026-08-27T01:38:30.187Z",
+      "asset_id": 7,
+      "asset_no": "555",
+      "category_id": 6,
+      "asset_name": "Samsung Galaxy Tab",
+      "serial_number": "TEST123456",
+      "vendor_id": null,
+      "purchase_date": null,
+      "purchase_cost": null,
+      "warranty_expire_date": null,
+      "current_status": "assigned",
+      "current_location_id": null,
+      "current_holder_type": "employee",
+      "current_holder_id": 9,
+      "attributes": null,
+      "notes": "",
+      "created_by": null,
+      "brand": "Samsung",
+      "model": "Galaxy Tab"
+    }
+  ],
+  "asset_categories": [
+    {
+      "category_id": 1,
+      "category_name": "Laptop",
+      "asset_type": null,
+      "parent_category_id": null
+    },
+    {
+      "category_id": 3,
+      "category_name": "test",
+      "asset_type": null,
+      "parent_category_id": 1
+    },
+    {
+      "category_id": 2,
+      "category_name": "Monitor",
+      "asset_type": "",
+      "parent_category_id": null
+    },
+    {
+      "category_id": 4,
+      "category_name": "Mobile Phone",
+      "asset_type": null,
+      "parent_category_id": null
+    },
+    {
+      "category_id": 5,
+      "category_name": "iPhone",
+      "asset_type": null,
+      "parent_category_id": 4
+    },
+    {
+      "category_id": 6,
+      "category_name": "Tablet",
+      "asset_type": null,
+      "parent_category_id": 4
+    }
+  ],
+  "assignments": [
+    {
+      "created_at": "2026-07-27T01:38:46.889Z",
+      "updated_at": "2026-07-27T01:38:56.009Z",
+      "assignment_id": 2,
+      "asset_id": 4,
+      "requisition_id": null,
+      "assignment_type": "permanent",
+      "holder_type": "employee",
+      "holder_id": 1,
+      "issued_date": "2026-07-27T08:38:46.895Z",
+      "issued_by": 1,
+      "due_date": null,
+      "returned_date": "2026-07-27T08:38:56.017Z",
+      "received_by": 1,
+      "return_condition": "normal",
+      "notes": null
+    },
+    {
+      "created_at": "2026-07-24T01:23:26.146Z",
+      "updated_at": "2026-07-27T02:07:20.104Z",
+      "assignment_id": 1,
+      "asset_id": 1,
+      "requisition_id": null,
+      "assignment_type": "permanent",
+      "holder_type": "employee",
+      "holder_id": 1,
+      "issued_date": "2026-07-24T08:23:26.139Z",
+      "issued_by": 1,
+      "due_date": null,
+      "returned_date": "2026-07-27T09:07:20.110Z",
+      "received_by": 1,
+      "return_condition": "normal",
+      "notes": null
+    }
+  ],
+  "attachments": [],
+  "disposals": [
+    {
+      "disposal_id": 1,
+      "asset_id": 4,
+      "disposal_method": "sold",
+      "disposal_date": "2026-07-26T17:00:00.000Z",
+      "sale_amount": "5000.00",
+      "approved_by": 1,
+      "reason": null,
+      "created_at": "2026-07-27T01:39:01.943Z"
+    }
+  ],
+  "goods_receipt_items": [
+    {
+      "receipt_item_id": 1,
+      "receipt_id": 1,
+      "po_item_id": null,
+      "asset_id": 5,
+      "stock_item_id": null,
+      "received_quantity": null,
+      "condition_on_receipt": null
+    }
+  ],
+  "goods_receipts": [
+    {
+      "receipt_id": 1,
+      "receipt_no": "GR-2026-0001",
+      "po_id": 2,
+      "receipt_date": "2026-07-26T17:00:00.000Z",
+      "received_by": 1,
+      "location_id": 1,
+      "notes": null,
+      "created_at": "2026-07-27T01:39:37.076Z"
+    }
+  ],
+  "locations": [
+    {
+      "location_id": 1,
+      "company_id": null,
+      "location_name": "Warehouse A",
+      "location_type": null,
+      "site": null,
+      "parent_location_id": null,
+      "created_at": "2026-07-27T01:39:32.404Z"
+    }
+  ],
+  "movements": [
+    {
+      "movement_id": 1,
+      "asset_id": 1,
+      "movement_type": "issued",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": null,
+      "from_holder_id": null,
+      "to_holder_type": "employee",
+      "to_holder_id": 1,
+      "reference_type": "assignment",
+      "reference_id": 1,
+      "performed_by": 1,
+      "notes": null,
+      "created_at": "2026-07-24T01:23:26.186Z"
+    },
+    {
+      "movement_id": 2,
+      "asset_id": 1,
+      "movement_type": "sent_to_repair",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": null,
+      "from_holder_id": null,
+      "to_holder_type": null,
+      "to_holder_id": null,
+      "reference_type": "repair",
+      "reference_id": 1,
+      "performed_by": 1,
+      "notes": "�Դ���Դ",
+      "created_at": "2026-07-27T01:38:18.268Z"
+    },
+    {
+      "movement_id": 3,
+      "asset_id": 4,
+      "movement_type": "issued",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": null,
+      "from_holder_id": null,
+      "to_holder_type": "employee",
+      "to_holder_id": 1,
+      "reference_type": "assignment",
+      "reference_id": 2,
+      "performed_by": 1,
+      "notes": null,
+      "created_at": "2026-07-27T01:38:46.889Z"
+    },
+    {
+      "movement_id": 4,
+      "asset_id": 4,
+      "movement_type": "returned",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": "employee",
+      "from_holder_id": 1,
+      "to_holder_type": null,
+      "to_holder_id": null,
+      "reference_type": "assignment",
+      "reference_id": 2,
+      "performed_by": 1,
+      "notes": "คืนสภาพ: normal",
+      "created_at": "2026-07-27T01:38:56.009Z"
+    },
+    {
+      "movement_id": 5,
+      "asset_id": 4,
+      "movement_type": "disposed",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": null,
+      "from_holder_id": null,
+      "to_holder_type": null,
+      "to_holder_id": null,
+      "reference_type": "disposal",
+      "reference_id": 1,
+      "performed_by": 1,
+      "notes": "วิธีจำหน่าย: sold",
+      "created_at": "2026-07-27T01:39:01.943Z"
+    },
+    {
+      "movement_id": 6,
+      "asset_id": 2,
+      "movement_type": "warranty_renewed",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": null,
+      "from_holder_id": null,
+      "to_holder_type": null,
+      "to_holder_id": null,
+      "reference_type": "warranty",
+      "reference_id": 1,
+      "performed_by": 1,
+      "notes": "ต่อประกันถึง 2028-01-01",
+      "created_at": "2026-07-27T01:39:09.658Z"
+    },
+    {
+      "movement_id": 7,
+      "asset_id": 5,
+      "movement_type": "received_to_stock",
+      "from_location_id": null,
+      "to_location_id": 1,
+      "from_holder_type": null,
+      "from_holder_id": null,
+      "to_holder_type": null,
+      "to_holder_id": null,
+      "reference_type": "goods_receipt",
+      "reference_id": 1,
+      "performed_by": 1,
+      "notes": null,
+      "created_at": "2026-07-27T01:39:37.076Z"
+    },
+    {
+      "movement_id": 8,
+      "asset_id": 1,
+      "movement_type": "returned",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": "employee",
+      "from_holder_id": 1,
+      "to_holder_type": null,
+      "to_holder_id": null,
+      "reference_type": "assignment",
+      "reference_id": 1,
+      "performed_by": 1,
+      "notes": "คืนสภาพ: normal",
+      "created_at": "2026-07-27T02:07:20.104Z"
+    },
+    {
+      "movement_id": 9,
+      "asset_id": 7,
+      "movement_type": "issued",
+      "from_location_id": null,
+      "to_location_id": null,
+      "from_holder_type": null,
+      "from_holder_id": null,
+      "to_holder_type": "employee",
+      "to_holder_id": 9,
+      "reference_type": "assignment",
+      "reference_id": 3,
+      "performed_by": 1,
+      "notes": null,
+      "created_at": "2026-08-27T01:38:30.187Z"
+    }
+  ],
+  "notifications": [
+    {
+      "notification_id": 2,
+      "recipient_employee_id": 2,
+      "type": "requisition_approved",
+      "title": "ใบขอเบิก/ยืมได้รับการอนุมัติแล้ว",
+      "message": "ใบขอ REQ-2026-0001 ได้รับการอนุมัติครบทุกระดับแล้ว",
+      "reference_type": "requisition",
+      "reference_id": 7,
+      "is_read": true,
+      "created_at": "2026-08-18T20:35:24.315Z",
+      "dismissed_at": null
+    },
+    {
+      "notification_id": 7,
+      "recipient_employee_id": 2,
+      "type": "requisition_rejected",
+      "title": "ใบขอเบิก/ยืมถูกปฏิเสธ",
+      "message": "ใบขอ Req-Equipment-2 ถูกปฏิเสธ",
+      "reference_type": "requisition",
+      "reference_id": 9,
+      "is_read": false,
+      "created_at": "2026-08-20T20:22:44.286Z",
+      "dismissed_at": null
+    },
+    {
+      "notification_id": 9,
+      "recipient_employee_id": 2,
+      "type": "requisition_approved",
+      "title": "ใบขอเบิก/ยืมได้รับการอนุมัติแล้ว",
+      "message": "ใบขอ Req-Equipment-3 ได้รับการอนุมัติครบทุกระดับแล้ว",
+      "reference_type": "requisition",
+      "reference_id": 10,
+      "is_read": false,
+      "created_at": "2026-08-20T20:40:40.728Z",
+      "dismissed_at": null
+    },
+    {
+      "notification_id": 11,
+      "recipient_employee_id": 2,
+      "type": "requisition_rejected",
+      "title": "ใบขอเบิก/ยืมถูกปฏิเสธ",
+      "message": "ใบขอ Req-Equipment-4 ถูกปฏิเสธ",
+      "reference_type": "requisition",
+      "reference_id": 11,
+      "is_read": false,
+      "created_at": "2026-08-20T21:01:28.259Z",
+      "dismissed_at": null
+    },
+    {
+      "notification_id": 1,
+      "recipient_employee_id": 1,
+      "type": "requisition_pending_approval",
+      "title": "มีใบขอเบิก/ยืมรออนุมัติ",
+      "message": "ใบขอ REQ-2026-0001 รอการอนุมัติจากคุณ",
+      "reference_type": "requisition",
+      "reference_id": 7,
+      "is_read": true,
+      "created_at": "2026-08-18T20:35:15.273Z",
+      "dismissed_at": "2026-08-27T06:34:50.277Z"
+    },
+    {
+      "notification_id": 4,
+      "recipient_employee_id": 1,
+      "type": "requisition_pending_approval",
+      "title": "มีใบขอเบิก/ยืมรออนุมัติ",
+      "message": "ใบขอ Req-Equipment-1 รอการอนุมัติจากคุณ",
+      "reference_type": "requisition",
+      "reference_id": 8,
+      "is_read": true,
+      "created_at": "2026-08-20T20:13:41.845Z",
+      "dismissed_at": "2026-08-27T06:34:50.277Z"
+    },
+    {
+      "notification_id": 6,
+      "recipient_employee_id": 1,
+      "type": "requisition_pending_approval",
+      "title": "มีใบขอเบิก/ยืมรออนุมัติ",
+      "message": "ใบขอ Req-Equipment-2 รอการอนุมัติจากคุณ",
+      "reference_type": "requisition",
+      "reference_id": 9,
+      "is_read": true,
+      "created_at": "2026-08-20T20:22:20.499Z",
+      "dismissed_at": "2026-08-27T06:34:50.277Z"
+    },
+    {
+      "notification_id": 8,
+      "recipient_employee_id": 1,
+      "type": "requisition_pending_approval",
+      "title": "มีใบขอเบิก/ยืมรออนุมัติ",
+      "message": "ใบขอ Req-Equipment-3 รอการอนุมัติจากคุณ",
+      "reference_type": "requisition",
+      "reference_id": 10,
+      "is_read": true,
+      "created_at": "2026-08-20T20:40:32.378Z",
+      "dismissed_at": "2026-08-27T06:34:50.277Z"
+    },
+    {
+      "notification_id": 10,
+      "recipient_employee_id": 1,
+      "type": "requisition_pending_approval",
+      "title": "มีใบขอเบิก/ยืมรออนุมัติ",
+      "message": "ใบขอ Req-Equipment-4 รอการอนุมัติจากคุณ",
+      "reference_type": "requisition",
+      "reference_id": 11,
+      "is_read": true,
+      "created_at": "2026-08-20T21:00:42.226Z",
+      "dismissed_at": "2026-08-27T06:34:50.277Z"
+    },
+    {
+      "notification_id": 12,
+      "recipient_employee_id": 1,
+      "type": "employee_profile_completed",
+      "title": "มีพนักงานใหม่รอกำหนดสิทธิ์",
+      "message": "วสุธา จันพางาม (29269059) กรอกข้อมูลพนักงานของตัวเองเสร็จแล้วหลัง login ครั้งแรก กรุณากำหนดบทบาท/สิทธิ์ให้",
+      "reference_type": "employee",
+      "reference_id": 6,
+      "is_read": true,
+      "created_at": "2026-08-26T23:22:29.888Z",
+      "dismissed_at": "2026-08-27T06:34:50.277Z"
+    },
+    {
+      "notification_id": 13,
+      "recipient_employee_id": 1,
+      "type": "employee_profile_completed",
+      "title": "มีพนักงานใหม่รอกำหนดสิทธิ์",
+      "message": "วสุธา จันพางาม (29269059) กรอกข้อมูลพนักงานของตัวเองเสร็จแล้วหลัง login ครั้งแรก กรุณากำหนดบทบาท/สิทธิ์ให้",
+      "reference_type": "employee",
+      "reference_id": 7,
+      "is_read": true,
+      "created_at": "2026-08-26T23:35:43.128Z",
+      "dismissed_at": "2026-08-27T07:02:28.356Z"
+    },
+    {
+      "notification_id": 14,
+      "recipient_employee_id": 1,
+      "type": "employee_profile_completed",
+      "title": "มีพนักงานใหม่รอกำหนดสิทธิ์",
+      "message": "วสุธา จันพางาม (29269059) กรอกข้อมูลพนักงานของตัวเองเสร็จแล้วหลัง login ครั้งแรก กรุณากำหนดบทบาท/สิทธิ์ให้",
+      "reference_type": "employee",
+      "reference_id": 8,
+      "is_read": true,
+      "created_at": "2026-08-27T00:03:28.006Z",
+      "dismissed_at": "2026-08-28T02:31:38.923Z"
+    },
+    {
+      "notification_id": 15,
+      "recipient_employee_id": 1,
+      "type": "employee_profile_completed",
+      "title": "มีพนักงานใหม่รอกำหนดสิทธิ์",
+      "message": "วสุธา จันพางาม (29269059) กรอกข้อมูลพนักงานของตัวเองเสร็จแล้วหลัง login ครั้งแรก กรุณากำหนดบทบาท/สิทธิ์ให้",
+      "reference_type": "employee",
+      "reference_id": 9,
+      "is_read": true,
+      "created_at": "2026-08-27T00:18:05.447Z",
+      "dismissed_at": "2026-08-28T02:31:38.923Z"
+    },
+    {
+      "notification_id": 17,
+      "recipient_employee_id": 1,
+      "type": "requisition_pending_approval",
+      "title": "มีใบขอเบิก/ยืมรออนุมัติ",
+      "message": "ใบขอ Req-Borrow-1 รอการอนุมัติจากคุณ",
+      "reference_type": "requisition",
+      "reference_id": 12,
+      "is_read": true,
+      "created_at": "2026-08-27T01:26:26.223Z",
+      "dismissed_at": "2026-08-28T02:31:38.923Z"
+    }
+  ],
+  "purchase_order_items": [
+    {
+      "po_item_id": 1,
+      "po_id": 1,
+      "category_id": 1,
+      "item_description": "Laptop",
+      "quantity": 5,
+      "unit_price": "25000.00",
+      "received_quantity": 0
+    },
+    {
+      "po_item_id": 2,
+      "po_id": 2,
+      "category_id": 1,
+      "item_description": "Mouse",
+      "quantity": 10,
+      "unit_price": "200.00",
+      "received_quantity": 0
+    }
+  ],
+  "purchase_orders": [
+    {
+      "created_at": "2026-07-24T01:38:49.151Z",
+      "updated_at": "2026-07-24T01:38:49.151Z",
+      "po_id": 1,
+      "po_no": "PO-0001",
+      "vendor_id": 1,
+      "order_date": null,
+      "expected_delivery_date": null,
+      "requested_by": 1,
+      "approved_by": null,
+      "status": "draft",
+      "total_amount": "125000.00"
+    },
+    {
+      "created_at": "2026-07-27T01:39:15.012Z",
+      "updated_at": "2026-07-27T01:39:26.133Z",
+      "po_id": 2,
+      "po_no": "PO-2026-0001",
+      "vendor_id": 1,
+      "order_date": null,
+      "expected_delivery_date": null,
+      "requested_by": 1,
+      "approved_by": 1,
+      "status": "ordered",
+      "total_amount": "2000.00"
+    }
+  ],
+  "repairs": [
+    {
+      "created_at": "2026-07-27T01:38:18.268Z",
+      "updated_at": "2026-07-27T01:38:18.268Z",
+      "repair_id": 1,
+      "asset_id": 1,
+      "reported_by": 1,
+      "problem_description": "�Դ���Դ",
+      "status": "reported",
+      "vendor_id": null,
+      "sent_to_vendor_date": null,
+      "repaired_date": null,
+      "result": null,
+      "repair_cost": null,
+      "notes": null
+    }
+  ],
+  "requisition_approvals": [
+    {
+      "approval_id": 5,
+      "requisition_id": 5,
+      "approval_level": 1,
+      "approver_id": 1,
+      "status": "approved",
+      "actioned_at": "2026-07-24T08:38:35.927Z",
+      "comment": null
+    },
+    {
+      "approval_id": 6,
+      "requisition_id": 6,
+      "approval_level": 1,
+      "approver_id": 1,
+      "status": "rejected",
+      "actioned_at": "2026-08-03T02:36:56.807Z",
+      "comment": null
+    },
+    {
+      "approval_id": 7,
+      "requisition_id": 7,
+      "approval_level": 1,
+      "approver_id": 1,
+      "status": "approved",
+      "actioned_at": "2026-08-19T03:35:24.376Z",
+      "comment": null
+    },
+    {
+      "approval_id": 9,
+      "requisition_id": 9,
+      "approval_level": 1,
+      "approver_id": 1,
+      "status": "rejected",
+      "actioned_at": "2026-08-21T03:22:43.951Z",
+      "comment": "[TEST cleanup] ����ʸ�ѵ��ѵ� - ��㺷��ͺ�к�����͹ realtime"
+    },
+    {
+      "approval_id": 10,
+      "requisition_id": 10,
+      "approval_level": 1,
+      "approver_id": 1,
+      "status": "approved",
+      "actioned_at": "2026-08-21T03:40:40.559Z",
+      "comment": "race-test-A"
+    },
+    {
+      "approval_id": 11,
+      "requisition_id": 11,
+      "approval_level": 1,
+      "approver_id": 1,
+      "status": "rejected",
+      "actioned_at": "2026-08-21T04:01:28.070Z",
+      "comment": "[TEST cleanup] ����ʸ�ѵ��ѵ� - ���ͺ�к�Ṻ�͡���"
+    }
+  ],
+  "requisition_items": [
+    {
+      "requisition_item_id": 4,
+      "requisition_id": 5,
+      "asset_id": 2,
+      "stock_item_id": null,
+      "quantity": 1
+    },
+    {
+      "requisition_item_id": 5,
+      "requisition_id": 6,
+      "asset_id": 1,
+      "stock_item_id": null,
+      "quantity": 1
+    },
+    {
+      "requisition_item_id": 6,
+      "requisition_id": 7,
+      "asset_id": 5,
+      "stock_item_id": null,
+      "quantity": 1
+    },
+    {
+      "requisition_item_id": 8,
+      "requisition_id": 9,
+      "asset_id": 5,
+      "stock_item_id": null,
+      "quantity": 1
+    },
+    {
+      "requisition_item_id": 9,
+      "requisition_id": 10,
+      "asset_id": 5,
+      "stock_item_id": null,
+      "quantity": 1
+    },
+    {
+      "requisition_item_id": 10,
+      "requisition_id": 11,
+      "asset_id": 5,
+      "stock_item_id": null,
+      "quantity": 1
+    }
+  ],
+  "requisitions": [
+    {
+      "created_at": "2026-07-24T01:38:32.246Z",
+      "updated_at": "2026-07-24T01:38:35.945Z",
+      "requisition_id": 5,
+      "requisition_no": "REQ-0001",
+      "requested_by": 1,
+      "request_type": "withdraw",
+      "overall_status": "approved",
+      "due_date": null,
+      "reason": null
+    },
+    {
+      "created_at": "2026-07-24T01:38:41.696Z",
+      "updated_at": "2026-08-02T19:36:56.864Z",
+      "requisition_id": 6,
+      "requisition_no": "REQ-0002",
+      "requested_by": 1,
+      "request_type": "borrow",
+      "overall_status": "rejected",
+      "due_date": null,
+      "reason": null
+    },
+    {
+      "created_at": "2026-08-18T20:35:14.949Z",
+      "updated_at": "2026-08-18T20:35:24.197Z",
+      "requisition_id": 7,
+      "requisition_no": "REQ-2026-0001",
+      "requested_by": 2,
+      "request_type": "borrow",
+      "overall_status": "approved",
+      "due_date": null,
+      "reason": "test notification flow"
+    },
+    {
+      "created_at": "2026-08-20T20:22:20.139Z",
+      "updated_at": "2026-08-20T20:22:44.177Z",
+      "requisition_id": 9,
+      "requisition_no": "Req-Equipment-2",
+      "requested_by": 2,
+      "request_type": "withdraw",
+      "overall_status": "rejected",
+      "due_date": null,
+      "reason": "[TEST] verify realtime SSE notification - safe to reject"
+    },
+    {
+      "created_at": "2026-08-20T20:40:32.016Z",
+      "updated_at": "2026-08-20T20:40:40.413Z",
+      "requisition_id": 10,
+      "requisition_no": "Req-Equipment-3",
+      "requested_by": 2,
+      "request_type": "withdraw",
+      "overall_status": "approved",
+      "due_date": null,
+      "reason": "[TEST] verify approve() race fix"
+    },
+    {
+      "created_at": "2026-08-20T21:00:41.858Z",
+      "updated_at": "2026-08-20T21:01:27.952Z",
+      "requisition_id": 11,
+      "requisition_no": "Req-Equipment-4",
+      "requested_by": 2,
+      "request_type": "withdraw",
+      "overall_status": "rejected",
+      "due_date": null,
+      "reason": "[TEST] verify requisition attachment ownership scoping"
+    }
+  ],
+  "stock_items": [],
+  "stock_levels": [],
+  "vendors": [
+    {
+      "created_at": "2026-07-24T01:38:41.799Z",
+      "updated_at": "2026-07-24T01:38:41.799Z",
+      "vendor_id": 1,
+      "vendor_name": "Acme Supplies",
+      "vendor_type": null,
+      "contact_info": null
+    }
+  ],
+  "warranties": [
+    {
+      "created_at": "2026-07-27T01:39:02.068Z",
+      "updated_at": "2026-07-27T01:39:09.658Z",
+      "warranty_id": 1,
+      "asset_id": 2,
+      "vendor_id": 1,
+      "start_date": "2025-12-31T17:00:00.000Z",
+      "end_date": "2027-12-31T17:00:00.000Z",
+      "status": "renewed",
+      "coverage_detail": null
+    }
+  ],
+  "companies": [
+    {
+      "created_at": "2026-07-23T18:18:15.584Z",
+      "updated_at": "2026-07-23T18:18:15.584Z",
+      "company_id": 1,
+      "company_code": "MLM",
+      "company_name": "Millimed Co., Ltd."
+    }
+  ],
+  "departments": [
+    {
+      "created_at": "2026-07-23T18:18:15.595Z",
+      "updated_at": "2026-07-23T18:18:15.595Z",
+      "department_id": 1,
+      "company_id": 1,
+      "department_name": "IT",
+      "site": "office",
+      "parent_department_id": null
+    },
+    {
+      "created_at": "2026-08-27T00:03:27.602Z",
+      "updated_at": "2026-08-27T00:03:27.602Z",
+      "department_id": 2,
+      "company_id": null,
+      "department_name": "กฏหมาย",
+      "site": null,
+      "parent_department_id": null
+    }
+  ],
+  "allowed_domains": [
+    {
+      "created_at": "2026-07-27T03:07:04.480Z",
+      "updated_at": "2026-07-29T21:14:50.183Z",
+      "allowed_domain_id": 1,
+      "domain": "millimedthailand.com",
+      "company_id": 1,
+      "is_enabled": true
+    }
+  ],
+  "roles": [
+    {
+      "role_id": 1,
+      "role_name": "it_admin",
+      "description": "ผู้ดูแลระบบ IT — สิทธิ์เต็ม"
+    },
+    {
+      "role_id": 3,
+      "role_name": "hr",
+      "description": "ฝ่ายบุคคล — ดูพนักงาน ทรัพย์สินที่ถืออยู่ และใบขอเบิก/ยืมทั้งหมด (ไม่แก้ไข/อนุมัติ)"
+    },
+    {
+      "role_id": 2,
+      "role_name": "employee",
+      "description": "พนักงาน — ขอเบิก/ยืมของได้เท่านั้น"
+    }
+  ],
+  "permissions": [
+    {
+      "permission_id": 1,
+      "permission_code": "master.manage",
+      "description": "จัดการข้อมูลหลัก (Master Data)"
+    },
+    {
+      "permission_id": 2,
+      "permission_code": "rbac.manage",
+      "description": "จัดการสิทธิ์การใช้งาน (บทบาทและสิทธิ์)"
+    },
+    {
+      "permission_id": 3,
+      "permission_code": "user.create",
+      "description": "สร้างผู้ใช้งาน"
+    },
+    {
+      "permission_id": 4,
+      "permission_code": "user.view_all",
+      "description": "ดูข้อมูลผู้ใช้งานทั้งหมด"
+    },
+    {
+      "permission_id": 5,
+      "permission_code": "user.update",
+      "description": "แก้ไขข้อมูลผู้ใช้งาน"
+    },
+    {
+      "permission_id": 6,
+      "permission_code": "user.delete",
+      "description": "ลบผู้ใช้งาน"
+    },
+    {
+      "permission_id": 7,
+      "permission_code": "employee.create",
+      "description": "สร้างข้อมูลพนักงาน"
+    },
+    {
+      "permission_id": 8,
+      "permission_code": "employee.view_all",
+      "description": "ดูข้อมูลพนักงานทั้งหมด"
+    },
+    {
+      "permission_id": 9,
+      "permission_code": "employee.update",
+      "description": "แก้ไขข้อมูลพนักงาน"
+    },
+    {
+      "permission_id": 10,
+      "permission_code": "employee.delete",
+      "description": "ลบข้อมูลพนักงาน"
+    },
+    {
+      "permission_id": 11,
+      "permission_code": "asset.create",
+      "description": "ลงทะเบียนทรัพย์สินใหม่"
+    },
+    {
+      "permission_id": 12,
+      "permission_code": "asset.view",
+      "description": "ดูข้อมูลทรัพย์สิน"
+    },
+    {
+      "permission_id": 13,
+      "permission_code": "asset.update",
+      "description": "แก้ไขข้อมูลทรัพย์สิน"
+    },
+    {
+      "permission_id": 14,
+      "permission_code": "asset.delete",
+      "description": "ลบข้อมูลทรัพย์สิน"
+    },
+    {
+      "permission_id": 15,
+      "permission_code": "stock.manage",
+      "description": "จัดการสต๊อกสินค้า"
+    },
+    {
+      "permission_id": 16,
+      "permission_code": "stock.view",
+      "description": "ดูข้อมูลสต๊อกสินค้า"
+    },
+    {
+      "permission_id": 17,
+      "permission_code": "po.create",
+      "description": "สร้างใบสั่งซื้อ (PO)"
+    },
+    {
+      "permission_id": 18,
+      "permission_code": "po.view",
+      "description": "ดูใบสั่งซื้อ (PO)"
+    },
+    {
+      "permission_id": 19,
+      "permission_code": "po.approve",
+      "description": "อนุมัติใบสั่งซื้อ (PO)"
+    },
+    {
+      "permission_id": 20,
+      "permission_code": "goods_receipt.create",
+      "description": "บันทึกรับสินค้าเข้าคลัง"
+    },
+    {
+      "permission_id": 21,
+      "permission_code": "goods_receipt.view",
+      "description": "ดูข้อมูลการรับสินค้าเข้าคลัง"
+    },
+    {
+      "permission_id": 22,
+      "permission_code": "requisition.create",
+      "description": "สร้างใบขอเบิก/ยืมทรัพย์สิน"
+    },
+    {
+      "permission_id": 23,
+      "permission_code": "requisition.view_own",
+      "description": "ดูใบขอเบิก/ยืมของตนเอง"
+    },
+    {
+      "permission_id": 24,
+      "permission_code": "requisition.view_all",
+      "description": "ดูใบขอเบิก/ยืมทั้งหมด"
+    },
+    {
+      "permission_id": 25,
+      "permission_code": "requisition.approve",
+      "description": "อนุมัติใบขอเบิก/ยืมทรัพย์สิน"
+    },
+    {
+      "permission_id": 26,
+      "permission_code": "assignment.issue",
+      "description": "เบิก/จ่ายทรัพย์สินให้ผู้ใช้งาน"
+    },
+    {
+      "permission_id": 27,
+      "permission_code": "assignment.return",
+      "description": "รับคืนทรัพย์สิน"
+    },
+    {
+      "permission_id": 28,
+      "permission_code": "repair.create",
+      "description": "แจ้งซ่อมทรัพย์สิน"
+    },
+    {
+      "permission_id": 29,
+      "permission_code": "repair.view",
+      "description": "ดูข้อมูลการแจ้งซ่อม"
+    },
+    {
+      "permission_id": 30,
+      "permission_code": "repair.update",
+      "description": "แก้ไขข้อมูลการแจ้งซ่อม"
+    },
+    {
+      "permission_id": 31,
+      "permission_code": "warranty.manage",
+      "description": "จัดการข้อมูลการรับประกัน"
+    },
+    {
+      "permission_id": 32,
+      "permission_code": "disposal.create",
+      "description": "สร้างรายการจำหน่ายทรัพย์สิน"
+    },
+    {
+      "permission_id": 33,
+      "permission_code": "disposal.view",
+      "description": "ดูรายการจำหน่ายทรัพย์สิน"
+    },
+    {
+      "permission_id": 34,
+      "permission_code": "attachment.manage",
+      "description": "จัดการไฟล์แนบ"
+    },
+    {
+      "permission_id": 35,
+      "permission_code": "attachment.view",
+      "description": "ดูไฟล์แนบ"
+    },
+    {
+      "permission_id": 36,
+      "permission_code": "dashboard.view",
+      "description": "ดูแดชบอร์ด"
+    }
+  ],
+  "role_permissions": [
+    {
+      "role_id": 1,
+      "permission_id": 1
+    },
+    {
+      "role_id": 1,
+      "permission_id": 2
+    },
+    {
+      "role_id": 1,
+      "permission_id": 3
+    },
+    {
+      "role_id": 1,
+      "permission_id": 4
+    },
+    {
+      "role_id": 1,
+      "permission_id": 5
+    },
+    {
+      "role_id": 1,
+      "permission_id": 6
+    },
+    {
+      "role_id": 1,
+      "permission_id": 7
+    },
+    {
+      "role_id": 1,
+      "permission_id": 8
+    },
+    {
+      "role_id": 1,
+      "permission_id": 9
+    },
+    {
+      "role_id": 1,
+      "permission_id": 10
+    },
+    {
+      "role_id": 1,
+      "permission_id": 11
+    },
+    {
+      "role_id": 1,
+      "permission_id": 12
+    },
+    {
+      "role_id": 1,
+      "permission_id": 13
+    },
+    {
+      "role_id": 1,
+      "permission_id": 14
+    },
+    {
+      "role_id": 1,
+      "permission_id": 15
+    },
+    {
+      "role_id": 1,
+      "permission_id": 16
+    },
+    {
+      "role_id": 1,
+      "permission_id": 17
+    },
+    {
+      "role_id": 1,
+      "permission_id": 18
+    },
+    {
+      "role_id": 1,
+      "permission_id": 19
+    },
+    {
+      "role_id": 1,
+      "permission_id": 20
+    },
+    {
+      "role_id": 1,
+      "permission_id": 21
+    },
+    {
+      "role_id": 1,
+      "permission_id": 22
+    },
+    {
+      "role_id": 1,
+      "permission_id": 23
+    },
+    {
+      "role_id": 1,
+      "permission_id": 24
+    },
+    {
+      "role_id": 1,
+      "permission_id": 25
+    },
+    {
+      "role_id": 1,
+      "permission_id": 26
+    },
+    {
+      "role_id": 1,
+      "permission_id": 27
+    },
+    {
+      "role_id": 1,
+      "permission_id": 28
+    },
+    {
+      "role_id": 1,
+      "permission_id": 29
+    },
+    {
+      "role_id": 1,
+      "permission_id": 30
+    },
+    {
+      "role_id": 1,
+      "permission_id": 31
+    },
+    {
+      "role_id": 1,
+      "permission_id": 32
+    },
+    {
+      "role_id": 1,
+      "permission_id": 33
+    },
+    {
+      "role_id": 1,
+      "permission_id": 34
+    },
+    {
+      "role_id": 1,
+      "permission_id": 35
+    },
+    {
+      "role_id": 1,
+      "permission_id": 36
+    },
+    {
+      "role_id": 2,
+      "permission_id": 12
+    },
+    {
+      "role_id": 2,
+      "permission_id": 22
+    },
+    {
+      "role_id": 2,
+      "permission_id": 23
+    },
+    {
+      "role_id": 3,
+      "permission_id": 8
+    },
+    {
+      "role_id": 3,
+      "permission_id": 12
+    },
+    {
+      "role_id": 3,
+      "permission_id": 24
+    },
+    {
+      "role_id": 3,
+      "permission_id": 36
+    }
+  ],
+  "employee_roles": [
+    {
+      "employee_id": 1,
+      "role_id": 1,
+      "assigned_date": "2026-07-23T17:00:00.000Z"
+    },
+    {
+      "employee_id": 2,
+      "role_id": 2,
+      "assigned_date": "2026-07-26T17:00:00.000Z"
+    },
+    {
+      "employee_id": 3,
+      "role_id": 3,
+      "assigned_date": "2026-08-19T17:00:00.000Z"
+    }
+  ],
+  "users": [
+    {
+      "created_at": "2026-08-19T23:04:27.900Z",
+      "updated_at": "2026-08-20T01:27:30.592Z",
+      "user_id": 3,
+      "username": "test.hr",
+      "email": "test.hr@millimed.local",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$/pN6Vqj+ZtpBKmNFSETkjw$53C7XthLKZ42dj/bRKUGmUjUS7VX68+Y2nJsRxjZ+ok",
+      "refresh_token_hash": null,
+      "is_active": true,
+      "employee_id": 3,
+      "must_change_password": true,
+      "reset_password_token_hash": null,
+      "reset_password_expires_at": null,
+      "supabase_user_id": null,
+      "full_name": null
+    },
+    {
+      "created_at": "2026-07-26T18:20:20.867Z",
+      "updated_at": "2026-08-20T21:01:02.111Z",
+      "user_id": 2,
+      "username": "test.employee",
+      "email": "test.employee@millimed.local",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$PZs88EQUcRuQAlJyT842CA$2b84Lg1hK/xR+JP5JShCcs9nCx2T+otol8k5HW6qhjY",
+      "refresh_token_hash": null,
+      "is_active": true,
+      "employee_id": 2,
+      "must_change_password": true,
+      "reset_password_token_hash": null,
+      "reset_password_expires_at": null,
+      "supabase_user_id": null,
+      "full_name": null
+    },
+    {
+      "created_at": "2026-07-23T18:18:15.678Z",
+      "updated_at": "2026-08-27T19:22:47.875Z",
+      "user_id": 1,
+      "username": "admin",
+      "email": "admin@millimed.local",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$vFBuFHTh049vJzSWyftf2A$xuFWR7ywXjtEXqxykydJe2ef4C+F9P1iEYcgKjKjshQ",
+      "refresh_token_hash": "$argon2id$v=19$m=65536,t=3,p=4$+cmoINk9yBq9pUQUoFmGEg$TO7Oo7qCUKKPhjnaWG0oPkmRqNEG0xBVuPzsL7hufCU",
+      "is_active": true,
+      "employee_id": 1,
+      "must_change_password": false,
+      "reset_password_token_hash": null,
+      "reset_password_expires_at": null,
+      "supabase_user_id": null,
+      "full_name": null
+    }
+  ],
+  "employees": [
+    {
+      "created_at": "2026-07-26T18:20:20.795Z",
+      "updated_at": "2026-07-26T18:20:20.795Z",
+      "employee_id": 2,
+      "employee_code": "EMP-0002",
+      "full_name": "Test Employee",
+      "department_id": 1,
+      "position": "Staff",
+      "email": "test.employee@millimed.local",
+      "phone": null
+    },
+    {
+      "created_at": "2026-08-19T23:04:27.488Z",
+      "updated_at": "2026-08-19T23:04:27.488Z",
+      "employee_id": 3,
+      "employee_code": "EMP-0003",
+      "full_name": "Test HR",
+      "department_id": 1,
+      "position": "HR Staff",
+      "email": "test.hr@millimed.local",
+      "phone": null
+    },
+    {
+      "created_at": "2026-07-23T18:18:15.604Z",
+      "updated_at": "2026-07-23T18:18:15.604Z",
+      "employee_id": 1,
+      "employee_code": "EMP-0001",
+      "full_name": "IT Admin",
+      "department_id": 1,
+      "position": "IT Admin",
+      "email": "admin@millimed.local",
+      "phone": null
+    }
+  ]
+}

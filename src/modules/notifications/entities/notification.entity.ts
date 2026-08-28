@@ -37,6 +37,10 @@ export class Notification {
   @Column({ name: 'is_read', default: false })
   isRead: boolean;
 
+  // ผู้ใช้กด "ลบ"/"เคลียร์ทั้งหมด" ทิ้ง — ซ่อนจากรายการที่แสดง ไม่ได้ลบแถวจริงออกจาก DB (เก็บไว้เป็นประวัติ)
+  @Column({ name: 'dismissed_at', type: 'timestamp', nullable: true })
+  dismissedAt: Date | null;
+
   @Column({ type: 'timestamp', default: () => 'now()' })
   createdAt: Date;
 }

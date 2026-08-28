@@ -30,11 +30,20 @@ export class EmployeesService {
     return this.repo.find({ relations: ['department'] });
   }
 
+  // เฉพาะพนักงานที่มีสิทธิ์ requisition.approve จริง (เช่น HR, IT Admin) ให้เลือกเป็นผู้อนุมัติได้ในฟอร์ม —
+  // ไม่งั้น dropdown จะมี "พนักงานทั่วไป" ปนมาด้วยทั้งที่กดอนุมัติจริงไม่ได้ (โดน 403 ตอนอนุมัติ)
   findDirectory() {
-    return this.repo.find({
-      select: ['employeeId', 'fullName', 'departmentId', 'position'],
-      order: { fullName: 'ASC' },
-    });
+    return this.repo
+      .createQueryBuilder('e')
+      .innerJoin('e.employeeRoles', 'er')
+      .innerJoin('er.role', 'r')
+      .innerJoin('r.rolePermissions', 'rp')
+      .innerJoin('rp.permission', 'p')
+      .where('p.permissionCode = :code', { code: 'requisition.approve' })
+      .select(['e.employeeId', 'e.fullName', 'e.departmentId', 'e.position'])
+      .distinct(true)
+      .orderBy('e.fullName', 'ASC')
+      .getMany();
   }
 
   async findOne(id: number) {

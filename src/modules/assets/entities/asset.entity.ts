@@ -34,8 +34,7 @@ export class Asset extends BaseEntity {
   @Column()
   assetName: string;
 
-  @Column({ nullable: true })
-  @Index()
+  @Column({ nullable: true, unique: true })
   serialNumber: string;
 
   @Column({ nullable: true })

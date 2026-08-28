@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Subject, filter, map } from 'rxjs';
 import { Notification } from './entities/notification.entity';
 import { Employee } from '../employees/entities/employee.entity';
@@ -68,16 +68,30 @@ export class NotificationsService {
     }
   }
 
+  // ซ่อนการแจ้งเตือนที่ถูก "เคลียร์" ทิ้ง (dismissedAt) และที่เก่าเกิน 7 วันออกจากรายการที่เห็น —
+  // ไม่ลบแถวจริงออกจาก DB เก็บไว้เป็นประวัติเสมอ (ดูคอมเมนต์ที่ Notification.dismissedAt)
   findMine(employeeId: number, unreadOnly = false) {
-    return this.repo.find({
-      where: unreadOnly ? { recipientEmployeeId: employeeId, isRead: false } : { recipientEmployeeId: employeeId },
-      order: { createdAt: 'DESC' },
-      take: 50,
-    });
+    const qb = this.repo
+      .createQueryBuilder('n')
+      .where('n.recipientEmployeeId = :employeeId', { employeeId })
+      .andWhere('n.dismissedAt IS NULL')
+      .andWhere("n.createdAt >= now() - interval '7 days'")
+      .orderBy('n.createdAt', 'DESC')
+      .take(50);
+
+    if (unreadOnly) qb.andWhere('n.isRead = false');
+
+    return qb.getMany();
   }
 
   unreadCount(employeeId: number) {
-    return this.repo.count({ where: { recipientEmployeeId: employeeId, isRead: false } });
+    return this.repo
+      .createQueryBuilder('n')
+      .where('n.recipientEmployeeId = :employeeId', { employeeId })
+      .andWhere('n.isRead = false')
+      .andWhere('n.dismissedAt IS NULL')
+      .andWhere("n.createdAt >= now() - interval '7 days'")
+      .getCount();
   }
 
   async markRead(id: number, employeeId: number) {
@@ -92,6 +106,22 @@ export class NotificationsService {
 
   async markAllRead(employeeId: number) {
     await this.repo.update({ recipientEmployeeId: employeeId, isRead: false }, { isRead: true });
+    return { success: true };
+  }
+
+  /** "ลบ" ทิ้งจากมุมมองผู้ใช้ — ซ่อนจากรายการเฉยๆ ไม่ได้ลบแถวจริง (ดู findMine) */
+  async dismiss(id: number, employeeId: number) {
+    const notification = await this.repo.findOne({ where: { notificationId: id } });
+    if (!notification) throw new NotFoundException(`ไม่พบการแจ้งเตือน id ${id}`);
+    if (notification.recipientEmployeeId !== employeeId) {
+      throw new ForbiddenException('ไม่สามารถแก้ไขการแจ้งเตือนของผู้อื่นได้');
+    }
+    notification.dismissedAt = new Date();
+    return this.repo.save(notification);
+  }
+
+  async dismissAll(employeeId: number) {
+    await this.repo.update({ recipientEmployeeId: employeeId, dismissedAt: IsNull() }, { dismissedAt: new Date() });
     return { success: true };
   }
 

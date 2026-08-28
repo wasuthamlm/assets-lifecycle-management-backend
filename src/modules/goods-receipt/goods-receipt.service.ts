@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { GoodsReceipt } from './entities/goods-receipt.entity';
 import { GoodsReceiptItem } from './entities/goods-receipt-item.entity';
 import { Asset } from '../assets/entities/asset.entity';
@@ -55,6 +56,8 @@ export class GoodsReceiptService {
           const assetData = itemDto.assetData!;
           const asset = manager.create(Asset, {
             ...assetData,
+            // ไม่ให้กรอกเอง — generate เป็น UUID ฝั่ง server เสมอ เหมือน AssetsService.create()
+            assetNo: randomUUID(),
             purchaseDate: dto.receiptDate ? new Date(dto.receiptDate) : new Date(),
             warrantyExpireDate: assetData.warrantyExpireDate ? new Date(assetData.warrantyExpireDate) : null,
             currentStatus: AssetStatus.IN_STOCK,

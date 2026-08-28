@@ -7,12 +7,14 @@ import { RequisitionsService } from './requisitions.service';
 import { RequisitionsController } from './requisitions.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AttachmentsModule } from '../attachments/attachments.module';
+import { AssignmentsModule } from '../assignments/assignments.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Requisition, RequisitionItem, RequisitionApproval]),
     NotificationsModule,
     AttachmentsModule,
+    AssignmentsModule,
   ],
   controllers: [RequisitionsController],
   providers: [RequisitionsService],

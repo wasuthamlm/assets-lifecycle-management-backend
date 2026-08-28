@@ -7,6 +7,11 @@ export interface SupabaseIdentity {
   email: string;
   /** เช่น 'azure' (Microsoft) หรือ 'email' — ใช้กันคนสมัครตรงผ่าน Supabase email/password แล้วสวมโดเมนที่ allowlist ไว้ */
   provider: string | null;
+  /**
+   * ชื่อเต็มจาก Azure AD — มีค่าเฉพาะตอนที่ Supabase ขอ scope 'profile' ตอน login (ดู frontend LoginPage)
+   * และบัญชี Azure AD นั้นกรอกชื่อไว้ เป็น null ถ้าไม่มีข้อมูลพอจะหาชื่อได้ (ปล่อยให้ fallback ไปใช้ email แทนที่ชั้น caller)
+   */
+  fullName: string | null;
 }
 
 /**
@@ -42,10 +47,23 @@ export class SupabaseIdentityService {
       throw new UnauthorizedException('Microsoft SSO token ไม่ถูกต้องหรือหมดอายุ');
     }
 
+    // Supabase เก็บ full_name ของ Azure AD ไว้ตรงๆ ที่ user_metadata.full_name อยู่แล้ว (มาจาก claim 'name')
+    // ส่วน given_name/family_name แยกชิ้นจะซ้อนอยู่ใต้ user_metadata.custom_claims แทน ไม่ใช่ระดับบนสุด —
+    // ใช้ full_name เป็นหลักเพราะชัวร์กว่า เผื่อ provider ในอนาคตไม่มี custom_claims ค่อย fallback ไปต่อเอง
+    const metadata = (data.user.user_metadata ?? {}) as {
+      full_name?: string;
+      custom_claims?: { given_name?: string; family_name?: string };
+    };
+    const fullName =
+      metadata.full_name?.trim() ||
+      [metadata.custom_claims?.given_name, metadata.custom_claims?.family_name].filter(Boolean).join(' ').trim() ||
+      null;
+
     return {
       supabaseUserId: data.user.id,
       email: data.user.email ?? '',
       provider: (data.user.app_metadata as { provider?: string } | undefined)?.provider ?? null,
+      fullName,
     };
   }
 }

@@ -66,4 +66,38 @@ describe('NotificationsService', () => {
     const result = await service.markRead(1, 10);
     expect(result.isRead).toBe(true);
   });
+
+  it('dismiss rejects a notification that does not belong to the caller', async () => {
+    const repo = { findOne: jest.fn().mockResolvedValue({ notificationId: 1, recipientEmployeeId: 10 }) } as any;
+    const employeeRepo = {} as any;
+    const service = new NotificationsService(repo, employeeRepo, mailService);
+
+    await expect(service.dismiss(1, 99)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('dismiss sets dismissedAt without deleting the row', async () => {
+    const notification = { notificationId: 1, recipientEmployeeId: 10, dismissedAt: null };
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(notification),
+      save: jest.fn((v) => Promise.resolve(v)),
+    } as any;
+    const employeeRepo = {} as any;
+    const service = new NotificationsService(repo, employeeRepo, mailService);
+
+    const result = await service.dismiss(1, 10);
+    expect(result.dismissedAt).toBeInstanceOf(Date);
+    expect(repo.save).toHaveBeenCalled();
+  });
+
+  it('dismissAll only clears the caller\'s own not-yet-dismissed notifications', async () => {
+    const repo = { update: jest.fn().mockResolvedValue(undefined) } as any;
+    const employeeRepo = {} as any;
+    const service = new NotificationsService(repo, employeeRepo, mailService);
+
+    await service.dismissAll(10);
+    expect(repo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientEmployeeId: 10 }),
+      expect.objectContaining({ dismissedAt: expect.any(Date) }),
+    );
+  });
 });

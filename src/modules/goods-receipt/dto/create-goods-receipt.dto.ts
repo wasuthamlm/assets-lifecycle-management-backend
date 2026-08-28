@@ -12,7 +12,6 @@ import {
 } from 'class-validator';
 
 class ReceiptAssetDataInput {
-  @ApiProperty({ example: 'FA-2026-00123' }) @IsString() assetNo: string;
   @ApiProperty() @IsInt() categoryId: number;
   @ApiProperty() @IsString() assetName: string;
   @ApiPropertyOptional() @IsOptional() @IsString() serialNumber?: string;

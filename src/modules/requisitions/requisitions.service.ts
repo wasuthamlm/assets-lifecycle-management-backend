@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Requisition } from './entities/requisition.entity';
@@ -7,10 +7,11 @@ import { RequisitionApproval } from './entities/requisition-approval.entity';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { ApproveRequisitionDto } from './dto/approve-requisition.dto';
 import { QueryRequisitionDto } from './dto/query-requisition.dto';
-import { ApprovalStatus, NotificationType, RequestType } from '@common/enums';
+import { ApprovalStatus, AssignmentType, HolderType, NotificationType, RequestType } from '@common/enums';
 import { generateSequentialNumber } from '@common/utils/sequential-number.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AttachmentsService } from '../attachments/attachments.service';
+import { AssignmentsService } from '../assignments/assignments.service';
 
 /**
  * Multi-level approval: สร้าง requisition_approvals หนึ่งแถวต่อ 1 approver ตามลำดับ (approverIds[0] = level 1, ...)
@@ -18,6 +19,8 @@ import { AttachmentsService } from '../attachments/attachments.service';
  */
 @Injectable()
 export class RequisitionsService {
+  private readonly logger = new Logger(RequisitionsService.name);
+
   constructor(
     @InjectRepository(Requisition) private repo: Repository<Requisition>,
     @InjectRepository(RequisitionItem) private itemRepo: Repository<RequisitionItem>,
@@ -25,6 +28,7 @@ export class RequisitionsService {
     private dataSource: DataSource,
     private notifications: NotificationsService,
     private attachments: AttachmentsService,
+    private assignments: AssignmentsService,
   ) {}
 
   // เลขที่เอกสารแยก sequence กันคนละ prefix ตามประเภทคำขอ — เบิก (withdraw) รันเลขแยกจากยืม (borrow)
@@ -310,6 +314,47 @@ export class RequisitionsService {
 
     await this.notifications.notify(...notifyArgs!);
 
+    const result = await this.getByIdOrThrow(id);
+    if (result.overallStatus === ApprovalStatus.APPROVED) {
+      await this.autoIssueApprovedItems(result, approverId);
+    }
+
     return this.getByIdOrThrow(id);
+  }
+
+  /**
+   * พออนุมัติครบทุกระดับแล้ว จ่ายทรัพย์สินที่เป็น serialized asset (มี assetId) ให้ผู้ขอทันที — ไม่งั้นต้อง
+   * พึ่งให้ IT/HR จำได้เองว่าต้องไปกดจ่ายแยกที่หน้า /assignments ซึ่งลืมง่ายมาก (ของแบบ stock_item/consumable
+   * ไม่เกี่ยวกับ Assignment เลย ข้ามไป — จัดการผ่านระบบ stock แยกต่างหาก)
+   *
+   * best-effort เหมือน NotificationsService.notify() — ถ้าจ่ายไม่สำเร็จ (เช่น asset ดันไม่ IN_STOCK แล้วเพราะ
+   * ถูกจัดการไปทางอื่นก่อนหน้าพอดี) แค่ log ไว้ ไม่ throw ทับ response การอนุมัติที่ commit สำเร็จไปแล้วจริง —
+   * ต้องให้ admin ไปจ่ายเองทีหลังผ่าน /assignments แทน
+   */
+  private async autoIssueApprovedItems(requisition: Requisition, issuedBy: number) {
+    const items = await this.itemRepo.find({ where: { requisitionId: requisition.requisitionId } });
+    const assignmentType =
+      requisition.requestType === RequestType.BORROW ? AssignmentType.TEMPORARY_LOAN : AssignmentType.PERMANENT;
+
+    for (const item of items) {
+      if (!item.assetId) continue;
+      try {
+        await this.assignments.issue(
+          {
+            assetId: item.assetId,
+            requisitionId: requisition.requisitionId,
+            assignmentType,
+            holderType: HolderType.EMPLOYEE,
+            holderId: requisition.requestedBy,
+            dueDate: requisition.dueDate ? new Date(requisition.dueDate).toISOString().slice(0, 10) : undefined,
+          },
+          issuedBy,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `จ่ายทรัพย์สิน asset_id=${item.assetId} อัตโนมัติไม่สำเร็จหลังอนุมัติใบขอ ${requisition.requisitionNo}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 }
