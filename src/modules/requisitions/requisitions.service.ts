@@ -4,6 +4,7 @@ import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Requisition } from './entities/requisition.entity';
 import { RequisitionItem } from './entities/requisition-item.entity';
 import { RequisitionApproval } from './entities/requisition-approval.entity';
+import { Employee } from '../employees/entities/employee.entity';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { ApproveRequisitionDto } from './dto/approve-requisition.dto';
 import { QueryRequisitionDto } from './dto/query-requisition.dto';
@@ -25,6 +26,7 @@ export class RequisitionsService {
     @InjectRepository(Requisition) private repo: Repository<Requisition>,
     @InjectRepository(RequisitionItem) private itemRepo: Repository<RequisitionItem>,
     @InjectRepository(RequisitionApproval) private approvalRepo: Repository<RequisitionApproval>,
+    @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private dataSource: DataSource,
     private notifications: NotificationsService,
     private attachments: AttachmentsService,
@@ -59,7 +61,17 @@ export class RequisitionsService {
     return `${prefix}${maxSeq + 1}`;
   }
 
-  async create(dto: CreateRequisitionDto, requestedBy: number) {
+  async create(dto: CreateRequisitionDto, currentUser: { employeeId: number; permissions: string[] }) {
+    let requestedBy = currentUser.employeeId;
+    if (dto.onBehalfOfEmployeeId != null && dto.onBehalfOfEmployeeId !== currentUser.employeeId) {
+      if (!currentUser.permissions.includes('requisition.view_all')) {
+        throw new ForbiddenException('ต้องมีสิทธิ์ requisition.view_all ถึงจะเบิก/ยืมแทนพนักงานคนอื่นได้');
+      }
+      const onBehalfOf = await this.employeeRepo.findOne({ where: { employeeId: dto.onBehalfOfEmployeeId } });
+      if (!onBehalfOf) throw new NotFoundException(`ไม่พบพนักงาน id ${dto.onBehalfOfEmployeeId}`);
+      requestedBy = onBehalfOf.employeeId;
+    }
+
     for (const item of dto.items) {
       const hasAsset = item.assetId != null;
       const hasStock = item.stockItemId != null;
@@ -187,11 +199,16 @@ export class RequisitionsService {
   /**
    * `requisition.view_own` ตั้งใจให้ดูได้เฉพาะใบของตัวเอง — ต้องเช็ค ownership เทียบกับ
    * requestedBy จริง ไม่ใช่แค่มี permission code นี้แล้วดูใบของใครก็ได้ตาม id
+   *
+   * ผู้อนุมัติที่ถูกระบุใน approverIds (ทุกลำดับชั้น ไม่ใช่แค่ระดับที่ pending อยู่) ต้องดูได้ด้วย แม้ไม่มี
+   * requisition.view_all — ไม่งั้นถ้ามี role ที่ให้แค่ requisition.approve (เช่น หัวหน้างาน/manager ที่ไม่ใช่
+   * it_admin) ผู้อนุมัติจะกดลิงก์จาก notification "มีใบขอรออนุมัติ" แล้วเจอ 403 ทันที เข้าไปอนุมัติไม่ได้เลย
    */
   async findOne(id: number, currentUser: { employeeId: number | null; permissions: string[] }) {
     const r = await this.getByIdOrThrow(id);
     const canViewAll = currentUser.permissions.includes('requisition.view_all');
-    if (!canViewAll && r.requestedBy !== currentUser.employeeId) {
+    const isApprover = r.approvals?.some((a) => a.approverId === currentUser.employeeId) ?? false;
+    if (!canViewAll && !isApprover && r.requestedBy !== currentUser.employeeId) {
       throw new ForbiddenException('คุณไม่มีสิทธิ์ดูใบขอเบิก/ยืมนี้');
     }
     return r;

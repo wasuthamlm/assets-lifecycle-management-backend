@@ -33,6 +33,14 @@ export class CreateRequisitionDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;
 
+  // สำหรับ hr เบิก/ยืมแทนพนักงานคนอื่น (เช่น เตรียมอุปกรณ์ให้พนักงานใหม่) — ถ้าใส่มา requestedBy (และผู้ครอบครอง
+  // ของหลังอนุมัติ) จะเป็นพนักงานคนนี้แทนคนที่ล็อกอินอยู่ ต้องมี requisition.view_all ถึงจะใช้ฟิลด์นี้ได้
+  // (ดู RequisitionsService.create) ไม่งั้น employee ทั่วไปจะสวมรอยเบิกในนามคนอื่นได้
+  @ApiPropertyOptional({ description: 'employee_id ของผู้ที่เบิก/ยืมแทน — ต้องมีสิทธิ์ requisition.view_all' })
+  @IsOptional()
+  @IsInt()
+  onBehalfOfEmployeeId?: number;
+
   @ApiProperty({ type: [RequisitionItemInput] })
   @IsArray()
   @ArrayMinSize(1)

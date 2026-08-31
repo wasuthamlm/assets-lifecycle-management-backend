@@ -11,7 +11,7 @@ describe('RequisitionsService#findOne (ownership scoping)', () => {
     const notifications = { notify: jest.fn() } as any;
     const attachments = {} as any;
     const assignments = {} as any;
-    return new RequisitionsService(repo, itemRepo, approvalRepo, dataSource, notifications, attachments, assignments);
+    return new RequisitionsService(repo, itemRepo, approvalRepo, {} as any, dataSource, notifications, attachments, assignments);
   };
 
   it('allows the requester to view their own requisition', async () => {
@@ -37,6 +37,26 @@ describe('RequisitionsService#findOne (ownership scoping)', () => {
     const service = buildService(null);
     await expect(service.findOne(1, { employeeId: 10, permissions: [] })).rejects.toThrow(NotFoundException);
   });
+
+  it('allows an assigned approver without requisition.view_all', async () => {
+    const service = buildService({
+      requisitionId: 1,
+      requestedBy: 10,
+      approvals: [{ approverId: 42, approvalLevel: 1 }],
+    });
+    await expect(
+      service.findOne(1, { employeeId: 42, permissions: [] }),
+    ).resolves.toEqual(expect.objectContaining({ requisitionId: 1 }));
+  });
+
+  it('rejects an employee who is neither owner, view_all, nor an assigned approver', async () => {
+    const service = buildService({
+      requisitionId: 1,
+      requestedBy: 10,
+      approvals: [{ approverId: 42, approvalLevel: 1 }],
+    });
+    await expect(service.findOne(1, { employeeId: 99, permissions: [] })).rejects.toThrow(ForbiddenException);
+  });
 });
 
 describe('RequisitionsService attachments (ownership scoping)', () => {
@@ -53,7 +73,7 @@ describe('RequisitionsService attachments (ownership scoping)', () => {
       ...attachmentsOverrides,
     } as any;
     const assignments = {} as any;
-    const service = new RequisitionsService(repo, itemRepo, approvalRepo, dataSource, notifications, attachments, assignments);
+    const service = new RequisitionsService(repo, itemRepo, approvalRepo, {} as any, dataSource, notifications, attachments, assignments);
     return { service, attachments };
   }
 
@@ -88,6 +108,54 @@ describe('RequisitionsService attachments (ownership scoping)', () => {
   });
 });
 
+describe('RequisitionsService#create (on behalf of)', () => {
+  function buildService(employee: any) {
+    const repo = {} as any;
+    const itemRepo = {} as any;
+    const approvalRepo = {} as any;
+    const employeeRepo = { findOne: jest.fn().mockResolvedValue(employee) } as any;
+    const dataSource = { transaction: jest.fn() } as any;
+    const notifications = { notify: jest.fn() } as any;
+    const attachments = {} as any;
+    const assignments = {} as any;
+    const service = new RequisitionsService(
+      repo,
+      itemRepo,
+      approvalRepo,
+      employeeRepo,
+      dataSource,
+      notifications,
+      attachments,
+      assignments,
+    );
+    return { service, dataSource, employeeRepo };
+  }
+
+  const baseDto = {
+    requestType: RequestType.WITHDRAW,
+    items: [{ assetId: 1, quantity: 1 }],
+    approverIds: [5],
+  } as any;
+
+  it('rejects onBehalfOfEmployeeId without requisition.view_all, before touching the transaction', async () => {
+    const { service, dataSource } = buildService({ employeeId: 20 });
+    await expect(
+      service.create({ ...baseDto, onBehalfOfEmployeeId: 20 }, { employeeId: 10, permissions: [] }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-existent onBehalfOfEmployeeId even with requisition.view_all', async () => {
+    const { service } = buildService(null);
+    await expect(
+      service.create(
+        { ...baseDto, onBehalfOfEmployeeId: 999 },
+        { employeeId: 10, permissions: ['requisition.view_all'] },
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
 describe('RequisitionsService#approve (concurrency-safe)', () => {
   function buildService({ requisition, approvals, items = [] }: { requisition: any; approvals: any[]; items?: any[] }) {
     const managerFindOne = jest.fn().mockResolvedValue(requisition);
@@ -103,7 +171,7 @@ describe('RequisitionsService#approve (concurrency-safe)', () => {
     const notifications = { notify: jest.fn() } as any;
     const attachments = {} as any;
     const assignments = { issue: jest.fn().mockResolvedValue(undefined) } as any;
-    const service = new RequisitionsService(repo, itemRepo, approvalRepo, dataSource, notifications, attachments, assignments);
+    const service = new RequisitionsService(repo, itemRepo, approvalRepo, {} as any, dataSource, notifications, attachments, assignments);
     return { service, manager, dataSource, notifications, assignments };
   }
 

@@ -32,7 +32,7 @@ export class RequisitionsController {
 
   @Post() @RequirePermissions('requisition.create')
   create(@Body() dto: CreateRequisitionDto, @CurrentUser() user: CurrentUserPayload) {
-    return this.service.create(dto, requireEmployeeId(user));
+    return this.service.create(dto, { employeeId: requireEmployeeId(user), permissions: user.permissions });
   }
 
   @Get() @RequirePermissions('requisition.view_all')
@@ -50,7 +50,10 @@ export class RequisitionsController {
     return this.service.findMine(requireEmployeeId(user), query);
   }
 
-  @Get(':id') @RequirePermissions('requisition.view_own')
+  // ไม่มี @RequirePermissions ตรงนี้เหมือนกัน (เดิมมี requisition.view_own ซึ่งบล็อกคนที่มีแค่
+  // requisition.view_all เช่น role hr ไม่ให้ผ่าน guard ทั้งที่ service ด้านล่างอนุญาตอยู่แล้ว)
+  // scope ผูกกับความเป็นเจ้าของใบขอ (หรือ requisition.view_all) ที่เช็คอยู่แล้วใน findOne() ของ service
+  @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return this.service.findOne(id, user);
   }
