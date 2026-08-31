@@ -15,6 +15,18 @@ export class QueryAssetDto {
   @IsInt()
   categoryId?: number;
 
+  /** หมวดหมู่หลัก — ต่างจาก categoryId ตรงที่ match ทั้งตัวหมวดหมู่หลักเองและหมวดหมู่ย่อยทุกอันข้างใต้ (ดู findAll) */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  mainCategoryId?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  brand?: string;
+
   @ApiPropertyOptional({ enum: AssetStatus })
   @IsOptional()
   @IsEnum(AssetStatus)

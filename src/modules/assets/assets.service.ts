@@ -58,7 +58,16 @@ export class AssetsService {
         s: `%${query.search}%`,
       });
     }
-    if (query.categoryId) qb.andWhere('asset.categoryId = :categoryId', { categoryId: query.categoryId });
+    if (query.categoryId) {
+      qb.andWhere('asset.categoryId = :categoryId', { categoryId: query.categoryId });
+    } else if (query.mainCategoryId) {
+      // ไม่มี categoryId (ระบุถึงหมวดหมู่ย่อยเจาะจง) มาด้วย เลยกวาดทั้งหมวดหมู่หลักเอง
+      // และหมวดหมู่ย่อยทุกอันข้างใต้ (ดู mainCategoryName/subCategoryName ฝั่ง frontend)
+      qb.andWhere('(category.categoryId = :mainCategoryId OR categoryParent.categoryId = :mainCategoryId)', {
+        mainCategoryId: query.mainCategoryId,
+      });
+    }
+    if (query.brand) qb.andWhere('asset.brand = :brand', { brand: query.brand });
     if (query.status) qb.andWhere('asset.currentStatus = :status', { status: query.status });
     if (query.holderType) qb.andWhere('asset.currentHolderType = :holderType', { holderType: query.holderType });
 
@@ -84,6 +93,17 @@ export class AssetsService {
     const withAvailableCount = data.map((a) => ({ ...a, availableCount: countByName.get(a.assetName) ?? 0 }));
 
     return { data: withAvailableCount, total, page, limit };
+  }
+
+  /** รายชื่อยี่ห้อที่มีอยู่จริง (distinct, ตัดค่าว่าง) ไว้ป้อน dropdown filter หน้ารายการ — ไม่ผูก pagination/filter อื่น */
+  async getBrands(): Promise<string[]> {
+    const rows = await this.repo
+      .createQueryBuilder('asset')
+      .select('DISTINCT asset.brand', 'brand')
+      .where('asset.brand IS NOT NULL')
+      .orderBy('asset.brand', 'ASC')
+      .getRawMany<{ brand: string }>();
+    return rows.map((r) => r.brand);
   }
 
   async findOne(id: number) {

@@ -24,6 +24,13 @@ export class AssetsController {
     return this.service.findAll(query);
   }
 
+  // ต้องอยู่ก่อน @Get(':id') — ไม่งั้น ParseIntPipe ของ :id จะรับ "brands" ไปแปลงเป็น number ไม่ได้ก่อน
+  @Get('brands')
+  @RequirePermissions('asset.view')
+  getBrands() {
+    return this.service.getBrands();
+  }
+
   @Get(':id')
   @RequirePermissions('asset.view')
   findOne(@Param('id', ParseIntPipe) id: number) {
