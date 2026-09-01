@@ -4,6 +4,7 @@ import { Requisition } from './entities/requisition.entity';
 import { RequisitionItem } from './entities/requisition-item.entity';
 import { RequisitionApproval } from './entities/requisition-approval.entity';
 import { Employee } from '../employees/entities/employee.entity';
+import { Asset } from '../assets/entities/asset.entity';
 import { RequisitionsService } from './requisitions.service';
 import { RequisitionsController } from './requisitions.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -12,7 +13,7 @@ import { AssignmentsModule } from '../assignments/assignments.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Requisition, RequisitionItem, RequisitionApproval, Employee]),
+    TypeOrmModule.forFeature([Requisition, RequisitionItem, RequisitionApproval, Employee, Asset]),
     NotificationsModule,
     AttachmentsModule,
     AssignmentsModule,

@@ -349,6 +349,7 @@ export class AuthService {
             fullName: user.employee.fullName,
             position: user.employee.position,
             email: user.employee.email,
+            phone: user.employee.phone,
             department: user.employee.department
               ? { departmentId: user.employee.department.departmentId, departmentName: user.employee.department.departmentName }
               : null,

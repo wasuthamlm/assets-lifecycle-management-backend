@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseIntPipe,
   Post,
@@ -64,6 +65,14 @@ export class RequisitionsController {
   @Get(':id/attachments')
   listAttachments(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
     return this.service.listAttachments(id, user);
+  }
+
+  // เรนเดอร์ "ใบส่งมอบ-ส่งคืนทรัพย์สินของบริษัท" จากข้อมูลที่ผู้ใช้กรอกตอนสร้างคำขอ — scope การเข้าถึงผูกกับ
+  // ความเป็นเจ้าของใบขอ (หรือ requisition.view_all) เหมือน :id/attachments ด้านบน ไม่ใช้ permission ใหม่
+  @Get(':id/document')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  getDocument(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.renderDocument(id, user);
   }
 
   @Post(':id/attachments')

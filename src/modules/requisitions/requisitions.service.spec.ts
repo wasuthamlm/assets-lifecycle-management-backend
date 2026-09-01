@@ -1,6 +1,6 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { RequisitionsService } from './requisitions.service';
-import { ApprovalStatus, AssignmentType, HolderType, NotificationType, RequestType } from '@common/enums';
+import { ApprovalStatus, AssetStatus, AssignmentType, HolderType, NotificationType, RequestType } from '@common/enums';
 
 describe('RequisitionsService#findOne (ownership scoping)', () => {
   const buildService = (requisition: any) => {
@@ -11,7 +11,17 @@ describe('RequisitionsService#findOne (ownership scoping)', () => {
     const notifications = { notify: jest.fn() } as any;
     const attachments = {} as any;
     const assignments = {} as any;
-    return new RequisitionsService(repo, itemRepo, approvalRepo, {} as any, dataSource, notifications, attachments, assignments);
+    return new RequisitionsService(
+      repo,
+      itemRepo,
+      approvalRepo,
+      {} as any,
+      {} as any,
+      dataSource,
+      notifications,
+      attachments,
+      assignments,
+    );
   };
 
   it('allows the requester to view their own requisition', async () => {
@@ -73,7 +83,17 @@ describe('RequisitionsService attachments (ownership scoping)', () => {
       ...attachmentsOverrides,
     } as any;
     const assignments = {} as any;
-    const service = new RequisitionsService(repo, itemRepo, approvalRepo, {} as any, dataSource, notifications, attachments, assignments);
+    const service = new RequisitionsService(
+      repo,
+      itemRepo,
+      approvalRepo,
+      {} as any,
+      {} as any,
+      dataSource,
+      notifications,
+      attachments,
+      assignments,
+    );
     return { service, attachments };
   }
 
@@ -109,11 +129,12 @@ describe('RequisitionsService attachments (ownership scoping)', () => {
 });
 
 describe('RequisitionsService#create (on behalf of)', () => {
-  function buildService(employee: any) {
+  function buildService(employee: any, assetRepoOverride?: any) {
     const repo = {} as any;
     const itemRepo = {} as any;
     const approvalRepo = {} as any;
     const employeeRepo = { findOne: jest.fn().mockResolvedValue(employee) } as any;
+    const assetRepo = assetRepoOverride ?? ({} as any);
     const dataSource = { transaction: jest.fn() } as any;
     const notifications = { notify: jest.fn() } as any;
     const attachments = {} as any;
@@ -123,12 +144,13 @@ describe('RequisitionsService#create (on behalf of)', () => {
       itemRepo,
       approvalRepo,
       employeeRepo,
+      assetRepo,
       dataSource,
       notifications,
       attachments,
       assignments,
     );
-    return { service, dataSource, employeeRepo };
+    return { service, dataSource, employeeRepo, assetRepo };
   }
 
   const baseDto = {
@@ -154,6 +176,161 @@ describe('RequisitionsService#create (on behalf of)', () => {
       ),
     ).rejects.toThrow(NotFoundException);
   });
+
+  it('rejects the same serialized asset being picked twice in one requisition', async () => {
+    const { service } = buildService(null);
+    const dto = { ...baseDto, items: [{ assetId: 1, quantity: 1 }, { assetId: 1, quantity: 1 }] };
+    await expect(service.create(dto, { employeeId: 10, permissions: [] })).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a requested asset that is no longer in_stock (already issued to someone else)', async () => {
+    const assetRepo = { find: jest.fn().mockResolvedValue([{ assetId: 1, assetName: 'Notebook', serialNumber: 'SN1', currentStatus: 'assigned' }]) } as any;
+    const { service } = buildService(null, assetRepo);
+    await expect(service.create(baseDto, { employeeId: 10, permissions: [] })).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects a requested assetId that no longer exists', async () => {
+    const assetRepo = { find: jest.fn().mockResolvedValue([]) } as any;
+    const { service } = buildService(null, assetRepo);
+    await expect(service.create(baseDto, { employeeId: 10, permissions: [] })).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('RequisitionsService#create (documentInfo snapshot)', () => {
+  const requester = {
+    employeeId: 10,
+    fullName: 'สมชาย ใจดี',
+    employeeCode: 'EMP-010',
+    position: 'IT Support',
+    phone: '0812345678',
+    department: { departmentName: 'IT' },
+  };
+
+  function buildService() {
+    const savedRequisitions: any[] = [];
+    const manager = {
+      query: jest.fn().mockResolvedValue(undefined),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      }),
+      create: jest.fn((_entity, data) => data),
+      save: jest.fn(async (data) => {
+        if (Array.isArray(data)) return data;
+        if (!('requisitionId' in data)) {
+          data.requisitionId = 1;
+          savedRequisitions.push(data);
+        }
+        return data;
+      }),
+      findOne: jest.fn().mockImplementation(() => Promise.resolve({ requisitionId: 1, requisitionNo: 'Req-Equipment-1' })),
+    };
+    const repo = {} as any;
+    const itemRepo = {} as any;
+    const approvalRepo = {} as any;
+    const employeeRepo = { findOne: jest.fn().mockResolvedValue(requester) } as any;
+    const assetRepo = {
+      find: jest.fn().mockResolvedValue([{ assetId: 1, assetName: 'Notebook', serialNumber: 'SN1', currentStatus: AssetStatus.IN_STOCK }]),
+    } as any;
+    const dataSource = { transaction: jest.fn((cb) => cb(manager)) } as any;
+    const notifications = { notify: jest.fn() } as any;
+    const attachments = {} as any;
+    const assignments = {} as any;
+    const service = new RequisitionsService(
+      repo,
+      itemRepo,
+      approvalRepo,
+      employeeRepo,
+      assetRepo,
+      dataSource,
+      notifications,
+      attachments,
+      assignments,
+    );
+    return { service, manager };
+  }
+
+  const baseDto = {
+    requestType: RequestType.WITHDRAW,
+    items: [{ assetId: 1, quantity: 1 }],
+    approverIds: [5],
+  } as any;
+
+  it('defaults documentInfo fields from the requester employee when not provided', async () => {
+    const { service, manager } = buildService();
+    await service.create(baseDto, { employeeId: 10, permissions: [] });
+
+    const requisitionArg = manager.create.mock.calls.find(([, data]) => 'documentInfo' in data)![1];
+    expect(requisitionArg.documentInfo).toEqual({
+      employeeNameEn: null,
+      startDate: null,
+      position: 'IT Support',
+      department: 'IT',
+      contactPhone: '0812345678',
+      accessories: null,
+    });
+  });
+
+  it('prefers explicit document fields over the employee defaults', async () => {
+    const { service, manager } = buildService();
+    await service.create(
+      {
+        ...baseDto,
+        employeeNameEn: 'Somchai Jaidee',
+        startDate: '2026-08-03',
+        position: 'Senior IT Support',
+        department: 'IT Infrastructure',
+        contactPhone: '0899999999',
+        accessories: { adapter: true, mouse: true, other: 'สายชาร์จ' },
+      },
+      { employeeId: 10, permissions: [] },
+    );
+
+    const requisitionArg = manager.create.mock.calls.find(([, data]) => 'documentInfo' in data)![1];
+    expect(requisitionArg.documentInfo).toEqual({
+      employeeNameEn: 'Somchai Jaidee',
+      startDate: '2026-08-03',
+      position: 'Senior IT Support',
+      department: 'IT Infrastructure',
+      contactPhone: '0899999999',
+      accessories: { adapter: true, mouse: true, pen: false, bag: false, other: 'สายชาร์จ' },
+    });
+  });
+});
+
+describe('RequisitionsService#renderDocument', () => {
+  it('renders the employee name and requisition number into the HTML document', async () => {
+    const requisition = {
+      requisitionId: 1,
+      requisitionNo: 'Req-Equipment-1',
+      requestType: RequestType.WITHDRAW,
+      requestedBy: 10,
+      createdAt: new Date('2026-08-03'),
+      documentInfo: { employeeNameEn: 'Somchai Jaidee', startDate: null, position: 'IT Support', department: 'IT', contactPhone: '0812345678', accessories: null },
+      requestedByEmployee: { fullName: 'สมชาย ใจดี', employeeCode: 'EMP-010', department: { departmentName: 'IT' } },
+      items: [{ note: 'ใช้งานปกติ', asset: { assetName: 'Notebook', brand: 'Asus', model: 'Expertbook', serialNumber: 'SN1' } }],
+      approvals: [],
+    };
+    const repo = { findOne: jest.fn().mockResolvedValue(requisition) } as any;
+    const service = new RequisitionsService(
+      repo,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { notify: jest.fn() } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const html = await service.renderDocument(1, { employeeId: 10, permissions: [] });
+    expect(html).toContain('สมชาย ใจดี');
+    expect(html).toContain('Req-Equipment-1');
+    expect(html).toContain('Notebook');
+    expect(html).toContain('Somchai Jaidee');
+  });
 });
 
 describe('RequisitionsService#approve (concurrency-safe)', () => {
@@ -171,7 +348,17 @@ describe('RequisitionsService#approve (concurrency-safe)', () => {
     const notifications = { notify: jest.fn() } as any;
     const attachments = {} as any;
     const assignments = { issue: jest.fn().mockResolvedValue(undefined) } as any;
-    const service = new RequisitionsService(repo, itemRepo, approvalRepo, {} as any, dataSource, notifications, attachments, assignments);
+    const service = new RequisitionsService(
+      repo,
+      itemRepo,
+      approvalRepo,
+      {} as any,
+      {} as any,
+      dataSource,
+      notifications,
+      attachments,
+      assignments,
+    );
     return { service, manager, dataSource, notifications, assignments };
   }
 

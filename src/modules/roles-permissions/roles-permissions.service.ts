@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Role } from './entities/role.entity';
 import { Permission } from './entities/permission.entity';
 import { RolePermission } from './entities/role-permission.entity';
@@ -52,6 +52,26 @@ export class RolesPermissionsService {
     return this.permissionRepo.find();
   }
 
+  /**
+   * กันล็อกตัวเอง — ถ้าบันทึกแล้วไม่มีพนักงานคนไหนถือ rbac.manage เหลืออยู่เลยสักคน (ไม่ว่าจะผ่าน role
+   * ไหนก็ตาม) จะไม่มีใครเข้าหน้า "สิทธิ์การใช้งาน" เพื่อแก้คืนได้อีก ต้องรัน seed/แก้ DB ตรงๆ เท่านั้น
+   * เช็คหลัง insert ภายใน transaction เดียวกัน — ถ้า throw ที่นี่ การเปลี่ยนแปลงทั้งหมดจะ rollback
+   */
+  private async assertRbacAdminRemains(manager: EntityManager) {
+    const row = await manager
+      .createQueryBuilder(EmployeeRole, 'er')
+      .innerJoin(RolePermission, 'rp', 'rp.roleId = er.roleId')
+      .innerJoin(Permission, 'p', 'p.permissionId = rp.permissionId')
+      .where('p.permissionCode = :code', { code: 'rbac.manage' })
+      .select('COUNT(DISTINCT er.employeeId)', 'cnt')
+      .getRawOne<{ cnt: string }>();
+    if (Number(row?.cnt ?? 0) === 0) {
+      throw new ConflictException(
+        'ไม่สามารถบันทึกได้ — การเปลี่ยนแปลงนี้จะทำให้ไม่มีพนักงานคนใดถือสิทธิ์ rbac.manage เหลืออยู่เลย (จะไม่มีใครเข้ามาจัดการสิทธิ์ต่อได้อีก)',
+      );
+    }
+  }
+
   // ---- Assign permissions ให้ role (replace ทั้งชุด) ----
   async assignPermissionsToRole(roleId: number, dto: AssignPermissionsDto) {
     await this.findRole(roleId);
@@ -69,6 +89,7 @@ export class RolesPermissionsService {
       await manager.delete(RolePermission, { roleId });
       const rows = dto.permissionIds.map((permissionId) => manager.create(RolePermission, { roleId, permissionId }));
       await manager.save(rows);
+      await this.assertRbacAdminRemains(manager);
       return manager.findOne(Role, {
         where: { roleId },
         relations: ['rolePermissions', 'rolePermissions.permission'],
@@ -93,7 +114,9 @@ export class RolesPermissionsService {
     const result = await this.dataSource.transaction(async (manager) => {
       await manager.delete(EmployeeRole, { employeeId });
       const rows = dto.roleIds.map((roleId) => manager.create(EmployeeRole, { employeeId, roleId, assignedDate: new Date() }));
-      return manager.save(rows);
+      const saved = await manager.save(rows);
+      await this.assertRbacAdminRemains(manager);
+      return saved;
     });
 
     // แจ้งเจ้าตัวทันทีที่ role เปลี่ยน — ฝั่ง frontend ใช้ตรงนี้ auto-refresh /auth/me เอง

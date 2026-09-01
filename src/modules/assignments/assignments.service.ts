@@ -4,6 +4,10 @@ import { DataSource, IsNull, Repository } from 'typeorm';
 import { Assignment } from './entities/assignment.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Requisition } from '../requisitions/entities/requisition.entity';
+import { Employee } from '../employees/entities/employee.entity';
+import { Department } from '../departments/entities/department.entity';
+import { Location } from '../locations/entities/location.entity';
+import { Vendor } from '../vendors/entities/vendor.entity';
 import { IssueAssetDto } from './dto/issue-asset.dto';
 import { ReturnAssetDto } from './dto/return-asset.dto';
 import { ApprovalStatus, AssetStatus, HolderType, MovementType, ReturnCondition } from '@common/enums';
@@ -21,9 +25,38 @@ export class AssignmentsService {
     @InjectRepository(Assignment) private repo: Repository<Assignment>,
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     @InjectRepository(Requisition) private requisitionRepo: Repository<Requisition>,
+    @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    @InjectRepository(Department) private departmentRepo: Repository<Department>,
+    @InjectRepository(Location) private locationRepo: Repository<Location>,
+    @InjectRepository(Vendor) private vendorRepo: Repository<Vendor>,
     private movementsService: MovementsService,
     private dataSource: DataSource,
   ) {}
+
+  /**
+   * Resolve polymorphic holder (holderType + holderId) เป็น object จริง เหมือนที่ AssetsService.resolveHolder ทำ
+   * — employee ดึง relation 'department' มาด้วยเพื่อโชว์แผนก/เบอร์โทรในหน้ารอรับคืน
+   */
+  private async resolveHolder(assignment: Assignment): Promise<any | null> {
+    switch (assignment.holderType) {
+      case HolderType.EMPLOYEE:
+        return this.employeeRepo.findOne({ where: { employeeId: assignment.holderId }, relations: ['department'] });
+      case HolderType.DEPARTMENT:
+        return this.departmentRepo.findOne({ where: { departmentId: assignment.holderId } });
+      case HolderType.LOCATION:
+        return this.locationRepo.findOne({ where: { locationId: assignment.holderId } });
+      case HolderType.VENDOR:
+        return this.vendorRepo.findOne({ where: { vendorId: assignment.holderId } });
+      default:
+        return null;
+    }
+  }
+
+  private async attachHolders(assignments: Assignment[]) {
+    return Promise.all(
+      assignments.map(async (a) => ({ ...a, holder: await this.resolveHolder(a) })),
+    );
+  }
 
   async issue(dto: IssueAssetDto, issuedBy: number) {
     return this.dataSource.transaction(async (manager) => {
@@ -145,24 +178,26 @@ export class AssignmentsService {
     });
   }
 
-  findByAsset(assetId: number) {
-    return this.repo.find({ where: { assetId }, order: { issuedDate: 'DESC' } });
+  async findByAsset(assetId: number) {
+    const assignments = await this.repo.find({ where: { assetId }, order: { issuedDate: 'DESC' } });
+    return this.attachHolders(assignments);
   }
 
   /** ทรัพย์สินที่ยังไม่ถูกคืนทั้งหมด — คิวสำหรับทีม IT รับของคืน เรียงตามกำหนดคืนใกล้สุดก่อน (เกินกำหนดขึ้นก่อน) */
-  findPendingReturns() {
-    return this.repo.find({
+  async findPendingReturns() {
+    const assignments = await this.repo.find({
       where: { returnedDate: IsNull() },
       relations: ['asset', 'issuedByEmployee'],
       order: { dueDate: 'ASC', issuedDate: 'ASC' },
     });
+    return this.attachHolders(assignments);
   }
 
-  /** ทรัพย์สินที่ employee คนนี้ถือครองอยู่ตอนนี้ (ยังไม่คืน) */
+  /** ทรัพย์สินที่ employee คนนี้ถือครองอยู่ตอนนี้ (ยังไม่คืน) — ดึง category/location ของ asset มาด้วยให้พอแสดงหน้า "รายการของฉัน" ได้ */
   findMine(employeeId: number) {
     return this.repo.find({
       where: { holderType: HolderType.EMPLOYEE, holderId: employeeId, returnedDate: IsNull() },
-      relations: ['asset'],
+      relations: ['asset', 'asset.category', 'asset.currentLocation'],
       order: { issuedDate: 'DESC' },
     });
   }
@@ -170,6 +205,6 @@ export class AssignmentsService {
   async findOne(id: number) {
     const a = await this.repo.findOne({ where: { assignmentId: id } });
     if (!a) throw new NotFoundException(`ไม่พบ assignment id ${id}`);
-    return a;
+    return { ...a, holder: await this.resolveHolder(a) };
   }
 }

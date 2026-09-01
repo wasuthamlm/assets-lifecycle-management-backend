@@ -1,18 +1,20 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Requisition } from './entities/requisition.entity';
 import { RequisitionItem } from './entities/requisition-item.entity';
 import { RequisitionApproval } from './entities/requisition-approval.entity';
 import { Employee } from '../employees/entities/employee.entity';
+import { Asset } from '../assets/entities/asset.entity';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { ApproveRequisitionDto } from './dto/approve-requisition.dto';
 import { QueryRequisitionDto } from './dto/query-requisition.dto';
-import { ApprovalStatus, AssignmentType, HolderType, NotificationType, RequestType } from '@common/enums';
+import { ApprovalStatus, AssetStatus, AssignmentType, HolderType, NotificationType, RequestType } from '@common/enums';
 import { generateSequentialNumber } from '@common/utils/sequential-number.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { AssignmentsService } from '../assignments/assignments.service';
+import { renderRequisitionDocumentHtml } from './requisition-document.template';
 
 /**
  * Multi-level approval: สร้าง requisition_approvals หนึ่งแถวต่อ 1 approver ตามลำดับ (approverIds[0] = level 1, ...)
@@ -22,11 +24,23 @@ import { AssignmentsService } from '../assignments/assignments.service';
 export class RequisitionsService {
   private readonly logger = new Logger(RequisitionsService.name);
 
+  private static readonly RELATIONS = [
+    'requestedByEmployee',
+    'requestedByEmployee.department',
+    'requestedByEmployee.department.company',
+    'items',
+    'items.asset',
+    'items.stockItem',
+    'approvals',
+    'approvals.approver',
+  ];
+
   constructor(
     @InjectRepository(Requisition) private repo: Repository<Requisition>,
     @InjectRepository(RequisitionItem) private itemRepo: Repository<RequisitionItem>,
     @InjectRepository(RequisitionApproval) private approvalRepo: Repository<RequisitionApproval>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     private dataSource: DataSource,
     private notifications: NotificationsService,
     private attachments: AttachmentsService,
@@ -44,7 +58,7 @@ export class RequisitionsService {
   }
 
   /**
-   * Preview เลขที่เอกสารถัดไปให้ฟอร์มแสดงก่อนบันทึกจริง — ไม่ lock/จองเลข เลขจริงคำนวณอีกครั้งตอน create()
+   * Preview เลขที่เอกสารถัดไปให้หน้าสร้างใบขอใช้แสดง — ไม่ lock/จองเลข เลขจริงคำนวณอีกครั้งตอน create()
    * ดึงทุกแถวมาเทียบเป็นตัวเลขใน JS แทน ORDER BY string DESC — ไม่มี padding เลข ORDER BY แบบ string จะผิดหลังเลขเกิน 9
    */
   async peekNextRequisitionNo(requestType: RequestType): Promise<string> {
@@ -80,6 +94,27 @@ export class RequisitionsService {
       }
     }
 
+    // ทรัพย์สินแบบมี assetId คือของชิ้นเดียวเจาะจง (serialized) — กันเลือกชิ้นเดียวกันซ้ำในคำขอเดียว
+    // และกันกรณี stale form/แข่งกันเบิกพร้อมกัน: เช็คสถานะ ณ ตอนสร้างจริงอีกที ไม่พึ่งแค่ frontend filter
+    // (การจ่ายจริงตอนอนุมัติครบก็ยัง lock ซ้ำอีกชั้นใน AssignmentsService.issue อยู่แล้ว นี่แค่ปฏิเสธไว
+    // ตั้งแต่ตอนสร้างคำขอแทนที่จะปล่อยให้ไปพังเงียบๆ ตอนอนุมัติ)
+    const requestedAssetIds = dto.items.map((i) => i.assetId).filter((id): id is number => id != null);
+    if (new Set(requestedAssetIds).size !== requestedAssetIds.length) {
+      throw new BadRequestException('มีทรัพย์สินชิ้นเดียวกันถูกเลือกซ้ำหลายรายการในคำขอเดียว');
+    }
+    if (requestedAssetIds.length > 0) {
+      const requestedAssets = await this.assetRepo.find({ where: { assetId: In(requestedAssetIds) } });
+      for (const assetId of requestedAssetIds) {
+        const asset = requestedAssets.find((a) => a.assetId === assetId);
+        if (!asset) throw new NotFoundException(`ไม่พบทรัพย์สิน id ${assetId}`);
+        if (asset.currentStatus !== AssetStatus.IN_STOCK) {
+          throw new ConflictException(
+            `ทรัพย์สิน "${asset.assetName}" (S/N: ${asset.serialNumber ?? '-'}) ถูกเบิก/ยืมไปแล้วโดยคนอื่นก่อนหน้านี้ กรุณาเลือกเครื่องอื่น`,
+          );
+        }
+      }
+    }
+
     const uniqueApprovers = new Set(dto.approverIds);
     if (uniqueApprovers.size !== dto.approverIds.length) {
       throw new BadRequestException('approverIds มีรายชื่อซ้ำกัน');
@@ -87,6 +122,32 @@ export class RequisitionsService {
     if (uniqueApprovers.has(requestedBy)) {
       throw new BadRequestException('ผู้ขอเบิก/ยืมไม่สามารถเป็นผู้อนุมัติของใบขอตัวเองได้');
     }
+
+    // โหลดข้อมูล employee ผู้ขอ (พร้อม department) ไว้ default ค่าที่ผู้ใช้ไม่ได้กรอกมาให้ใบส่งมอบ-ส่งคืน
+    // ทรัพย์สิน (ดู GET /requisitions/:id/document) — ต้อง query แยกเพราะทั้ง 2 branch ด้านบน
+    // (ขอเอง / onBehalfOf) ยังไม่ได้ join department มาด้วย
+    const requesterEmployee = await this.employeeRepo.findOne({
+      where: { employeeId: requestedBy },
+      relations: ['department'],
+    });
+    if (!requesterEmployee) throw new NotFoundException(`ไม่พบพนักงาน id ${requestedBy}`);
+
+    const documentInfo = {
+      employeeNameEn: dto.employeeNameEn ?? null,
+      startDate: dto.startDate ?? null,
+      position: dto.position ?? requesterEmployee.position ?? null,
+      department: dto.department ?? requesterEmployee.department?.departmentName ?? null,
+      contactPhone: dto.contactPhone ?? requesterEmployee.phone ?? null,
+      accessories: dto.accessories
+        ? {
+            adapter: dto.accessories.adapter ?? false,
+            mouse: dto.accessories.mouse ?? false,
+            pen: dto.accessories.pen ?? false,
+            bag: dto.accessories.bag ?? false,
+            other: dto.accessories.other ?? null,
+          }
+        : null,
+    };
 
     const created = await this.dataSource.transaction(async (manager) => {
       const requisitionNo = await this.generateRequisitionNo(manager, dto.requestType);
@@ -96,6 +157,7 @@ export class RequisitionsService {
         requestType: dto.requestType,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         reason: dto.reason,
+        documentInfo,
         overallStatus: ApprovalStatus.PENDING,
       });
       await manager.save(requisition);
@@ -247,6 +309,21 @@ export class RequisitionsService {
       throw new NotFoundException(`ไม่พบไฟล์แนบ id ${attachmentId} ในใบขอนี้`);
     }
     return this.attachments.remove(attachmentId);
+  }
+
+  /**
+   * เรนเดอร์ "ใบส่งมอบ-ส่งคืนทรัพย์สินของบริษัท" เป็น HTML จาก documentInfo ที่ snapshot ไว้ตอน create()
+   * — ใช้ relations เต็ม (รวม department/company และ items.stockItem) ต่างจาก getByIdOrThrow ที่ใช้แค่
+   * ปกติในหน้า list/detail ทั่วไป จึง query แยกอีกครั้งหลังผ่าน findOne() (เช็คสิทธิ์การเข้าถึงแล้ว)
+   */
+  async renderDocument(id: number, currentUser: { employeeId: number | null; permissions: string[] }) {
+    await this.findOne(id, currentUser);
+    const r = await this.repo.findOne({
+      where: { requisitionId: id },
+      relations: RequisitionsService.RELATIONS,
+    });
+    if (!r) throw new NotFoundException(`ไม่พบใบขอเบิก/ยืม id ${id}`);
+    return renderRequisitionDocumentHtml(r);
   }
 
   async approve(id: number, dto: ApproveRequisitionDto, approverId: number) {

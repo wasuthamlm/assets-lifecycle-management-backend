@@ -31,4 +31,7 @@ export class RequisitionItem {
 
   @Column({ type: 'int', default: 1, comment: 'ใช้กับ stock_item เท่านั้น, asset ใช้ 1 เสมอ' })
   quantity: number;
+
+  @Column({ type: 'text', nullable: true, comment: 'หมายเหตุต่อรายการ สำหรับพิมพ์ในใบส่งมอบ-ส่งคืนทรัพย์สิน' })
+  note: string | null;
 }
