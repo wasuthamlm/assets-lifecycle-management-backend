@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsInt, IsOptional, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsInt, IsOptional, ValidateNested } from 'class-validator';
 import { CreatePurchaseOrderItemDto } from './create-purchase-order-item.dto';
 
 export class CreatePurchaseOrderDto {
@@ -11,6 +11,7 @@ export class CreatePurchaseOrderDto {
 
   @ApiProperty({ type: [CreatePurchaseOrderItemDto] })
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => CreatePurchaseOrderItemDto)
   items: CreatePurchaseOrderItemDto[];

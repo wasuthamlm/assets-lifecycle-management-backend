@@ -68,6 +68,9 @@ export class Assignment extends BaseEntity {
   @Column({ type: 'enum', enum: ReturnCondition, nullable: true })
   returnCondition: ReturnCondition;
 
+  @Column({ name: 'is_late_return', default: false, comment: 'คืนช้ากว่า dueDate หรือไม่ — คำนวณ ณ เวลาที่คืนจริง เก็บถาวรไว้ ไม่คำนวณสดทุกครั้ง' })
+  isLateReturn: boolean;
+
   @Column({ type: 'text', nullable: true })
   notes: string;
 }

@@ -8,6 +8,7 @@ import { Asset } from '../assets/entities/asset.entity';
 import { PurchaseOrderItem } from '../purchasing/entities/purchase-order-item.entity';
 import { PurchaseOrder } from '../purchasing/entities/purchase-order.entity';
 import { CreateGoodsReceiptDto } from './dto/create-goods-receipt.dto';
+import { QueryGoodsReceiptDto } from './dto/query-goods-receipt.dto';
 import { AssetStatus, MovementType, PoStatus } from '@common/enums';
 import { StockService } from '../stock/stock.service';
 import { MovementsService } from '../movements/movements.service';
@@ -118,10 +119,17 @@ export class GoodsReceiptService {
       }
 
       if (dto.poId) {
-        const po = await manager.findOne(PurchaseOrder, { where: { poId: dto.poId }, relations: ['items'] });
+        // ล็อกแถว PO เดียวกับที่ PurchasingService.updateStatus() ล็อก กันรับของเข้าคลังพร้อมกับแก้สถานะ PO
+        // มือแข่งกันเขียนทับ — ไม่ join relations ตรงนี้เพราะ pessimistic lock กับ outer join ของ one-to-many
+        // จะ error ใน Postgres จึงแยกอ่าน items เป็นอีก query ต่างหาก
+        const po = await manager.findOne(PurchaseOrder, {
+          where: { poId: dto.poId },
+          lock: { mode: 'pessimistic_write' },
+        });
         if (po) {
-          const allReceived = po.items.every((i) => i.receivedQuantity >= i.quantity);
-          const someReceived = po.items.some((i) => i.receivedQuantity > 0);
+          const items = await manager.find(PurchaseOrderItem, { where: { poId: dto.poId } });
+          const allReceived = items.every((i) => i.receivedQuantity >= i.quantity);
+          const someReceived = items.some((i) => i.receivedQuantity > 0);
           po.status = allReceived ? PoStatus.RECEIVED : someReceived ? PoStatus.PARTIALLY_RECEIVED : po.status;
           await manager.save(po);
         }
@@ -133,8 +141,27 @@ export class GoodsReceiptService {
     });
   }
 
-  findAll() {
-    return this.receiptRepo.find({ relations: ['purchaseOrder', 'location'], order: { receiptId: 'DESC' } });
+  /**
+   * เดิม fetch ทั้งหมดไม่มี pagination/search — หน้า list ใช้แค่จำนวนรายการ (items.length) ไม่ได้ใช้
+   * รายละเอียดแต่ละ item จึงใช้ loadRelationCountAndMap แทน leftJoinAndSelect('items', ...) ตรงๆ
+   * (items เป็น OneToMany — join ตรงจะ multiply แถวจน skip/take/count ผิดเพี้ยนเหมือนที่เคยแก้ใน requisitions)
+   */
+  findAll(query: QueryGoodsReceiptDto) {
+    const qb = this.receiptRepo
+      .createQueryBuilder('gr')
+      .leftJoinAndSelect('gr.purchaseOrder', 'purchaseOrder')
+      .leftJoinAndSelect('gr.location', 'location')
+      .loadRelationCountAndMap('gr.itemCount', 'gr.items');
+
+    if (query.search) {
+      qb.andWhere('(gr.receiptNo ILIKE :s OR purchaseOrder.poNo ILIKE :s)', { s: `%${query.search}%` });
+    }
+
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    qb.orderBy('gr.receiptId', 'DESC').skip((page - 1) * limit).take(limit);
+
+    return qb.getManyAndCount().then(([data, total]) => ({ data, total, page, limit }));
   }
 
   async findOne(id: number) {

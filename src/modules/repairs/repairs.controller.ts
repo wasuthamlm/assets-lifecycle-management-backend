@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RepairsService } from './repairs.service';
 import { CreateRepairDto } from './dto/create-repair.dto';
 import { UpdateRepairStatusDto } from './dto/update-repair-status.dto';
+import { QueryRepairDto } from './dto/query-repair.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { requireEmployeeId } from '@common/utils/require-employee-id.util';
@@ -20,7 +21,7 @@ export class RepairsController {
   }
 
   @Get() @RequirePermissions('repair.view')
-  findAll() { return this.service.findAll(); }
+  findAll(@Query() query: QueryRepairDto) { return this.service.findAll(query); }
 
   @Get(':id') @RequirePermissions('repair.view')
   findOne(@Param('id', ParseIntPipe) id: number) { return this.service.findOne(id); }

@@ -5,6 +5,7 @@ import { Repair } from './entities/repair.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { CreateRepairDto } from './dto/create-repair.dto';
 import { UpdateRepairStatusDto } from './dto/update-repair-status.dto';
+import { QueryRepairDto } from './dto/query-repair.dto';
 import { AssetStatus, MovementType, RepairResult, RepairStatus } from '@common/enums';
 import { MovementsService } from '../movements/movements.service';
 import { assertAssetStatus } from '@common/utils/assert-asset-status.util';
@@ -63,8 +64,25 @@ export class RepairsService {
     });
   }
 
-  findAll() {
-    return this.repo.find({ relations: ['asset', 'vendor'], order: { repairId: 'DESC' } });
+  /**
+   * เดิม fetch ทั้งหมดไม่มี pagination/search — ทุก relation ที่นี่เป็น ManyToOne (asset, vendor) จึง
+   * leftJoinAndSelect + skip/take ในคิวรีเดียวได้เลย ไม่เสี่ยง row-multiplication
+   */
+  findAll(query: QueryRepairDto) {
+    const qb = this.repo.createQueryBuilder('r').leftJoinAndSelect('r.asset', 'asset').leftJoinAndSelect('r.vendor', 'vendor');
+
+    if (query.search) {
+      qb.andWhere('(asset.assetName ILIKE :s OR asset.assetNo ILIKE :s OR r.problemDescription ILIKE :s)', {
+        s: `%${query.search}%`,
+      });
+    }
+    if (query.status) qb.andWhere('r.status = :status', { status: query.status });
+
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    qb.orderBy('r.repairId', 'DESC').skip((page - 1) * limit).take(limit);
+
+    return qb.getManyAndCount().then(([data, total]) => ({ data, total, page, limit }));
   }
 
   async findOne(id: number) {

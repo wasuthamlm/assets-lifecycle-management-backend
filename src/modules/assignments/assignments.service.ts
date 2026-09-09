@@ -13,6 +13,7 @@ import { ReturnAssetDto } from './dto/return-asset.dto';
 import { ApprovalStatus, AssetStatus, HolderType, MovementType, ReturnCondition } from '@common/enums';
 import { MovementsService } from '../movements/movements.service';
 import { assertAssetStatus } from '@common/utils/assert-asset-status.util';
+import { isPastDueDateThai } from '@common/utils/thai-date.util';
 
 /**
  * assignment = สถานะ "การถือครองปัจจุบัน" ของ asset หนึ่งชิ้น (มี due date/condition ตอนคืน)
@@ -148,6 +149,10 @@ export class AssignmentsService {
       assignment.returnedDate = new Date();
       assignment.receivedBy = receivedBy;
       assignment.returnCondition = dto.returnCondition;
+      // เทียบวันที่ปฏิทินไทยของวันคืนจริงกับ dueDate (ไม่ใช่ timestamp ตรงๆ) — Postgres session ในระบบนี้ตั้ง
+      // TZ เป็น UTC ต่างจากเวลาไทยที่ธุรกิจใช้จริง ถ้าเทียบ timestamp ดิบๆ จะเพี้ยนไปหนึ่งวันช่วง 00:00-06:59
+      // เวลาไทยทุกวัน จึง anchor เข้ากับ Asia/Bangkok เสมอผ่าน isPastDueDateThai (จุดเดียวกับที่ cron ใช้)
+      assignment.isLateReturn = !!assignment.dueDate && isPastDueDateThai(assignment.dueDate, assignment.returnedDate);
       if (dto.notes) assignment.notes = dto.notes;
       await manager.save(assignment);
 
@@ -169,7 +174,7 @@ export class AssignmentsService {
           referenceType: 'assignment',
           referenceId: assignment.assignmentId,
           performedBy: receivedBy,
-          notes: `คืนสภาพ: ${dto.returnCondition}${dto.notes ? ' — ' + dto.notes : ''}`,
+          notes: `คืนสภาพ: ${dto.returnCondition}${assignment.isLateReturn ? ' (คืนล่าช้ากว่ากำหนด)' : ''}${dto.notes ? ' — ' + dto.notes : ''}`,
         },
         manager,
       );

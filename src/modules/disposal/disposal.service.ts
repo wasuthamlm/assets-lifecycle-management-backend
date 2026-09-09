@@ -5,6 +5,7 @@ import { Disposal } from './entities/disposal.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Assignment } from '../assignments/entities/assignment.entity';
 import { CreateDisposalDto } from './dto/create-disposal.dto';
+import { QueryDisposalDto } from './dto/query-disposal.dto';
 import { AssetStatus, MovementType } from '@common/enums';
 import { MovementsService } from '../movements/movements.service';
 import { assertAssetStatus } from '@common/utils/assert-asset-status.util';
@@ -76,8 +77,22 @@ export class DisposalService {
     });
   }
 
-  findAll() {
-    return this.repo.find({ relations: ['asset'], order: { disposalId: 'DESC' } });
+  /**
+   * เดิม fetch ทั้งหมดไม่มี pagination/search — relation `asset` เป็น ManyToOne จึง
+   * leftJoinAndSelect + skip/take ในคิวรีเดียวได้เลย ไม่เสี่ยง row-multiplication
+   */
+  findAll(query: QueryDisposalDto) {
+    const qb = this.repo.createQueryBuilder('d').leftJoinAndSelect('d.asset', 'asset');
+
+    if (query.search) {
+      qb.andWhere('(asset.assetName ILIKE :s OR asset.assetNo ILIKE :s)', { s: `%${query.search}%` });
+    }
+
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    qb.orderBy('d.disposalId', 'DESC').skip((page - 1) * limit).take(limit);
+
+    return qb.getManyAndCount().then(([data, total]) => ({ data, total, page, limit }));
   }
 
   async findOne(id: number) {

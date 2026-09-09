@@ -41,6 +41,24 @@ export class WarrantyService {
     return this.repo.find({ where: { assetId }, order: { endDate: 'DESC' } });
   }
 
+  /**
+   * ประกันที่ active อยู่และจะหมดอายุภายใน withinDays วัน — เดิมมีแค่ cron (notifyExpiringWarranties)
+   * คำนวณ 30 วันล่วงหน้าไว้ส่ง notification แต่ไม่มีหน้าให้ it_admin เข้ามา browse ดูล่วงหน้าเองได้เลย
+   * ต้องค้นทีละ asset ผ่าน findByAsset() เท่านั้น จึงเพิ่ม endpoint นี้ให้ list ดูได้ตรงๆ
+   */
+  findExpiring(withinDays = 30) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + withinDays);
+    return this.repo
+      .createQueryBuilder('w')
+      .leftJoinAndSelect('w.asset', 'asset')
+      .leftJoinAndSelect('w.vendor', 'vendor')
+      .where('w.status = :status', { status: WarrantyStatus.ACTIVE })
+      .andWhere('w.endDate <= :cutoff', { cutoff })
+      .orderBy('w.endDate', 'ASC')
+      .getMany();
+  }
+
   async findOne(id: number) {
     const w = await this.repo.findOne({ where: { warrantyId: id }, relations: ['asset', 'vendor'] });
     if (!w) throw new NotFoundException(`ไม่พบข้อมูลประกัน id ${id}`);

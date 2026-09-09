@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { GoodsReceiptService } from './goods-receipt.service';
 import { CreateGoodsReceiptDto } from './dto/create-goods-receipt.dto';
+import { QueryGoodsReceiptDto } from './dto/query-goods-receipt.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { requireEmployeeId } from '@common/utils/require-employee-id.util';
@@ -19,7 +20,7 @@ export class GoodsReceiptController {
   }
 
   @Get() @RequirePermissions('goods_receipt.view')
-  findAll() { return this.service.findAll(); }
+  findAll(@Query() query: QueryGoodsReceiptDto) { return this.service.findAll(query); }
 
   @Get(':id') @RequirePermissions('goods_receipt.view')
   findOne(@Param('id', ParseIntPipe) id: number) { return this.service.findOne(id); }

@@ -1,6 +1,7 @@
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { MovementsService } from './movements.service';
+import { QueryMovementDto } from './dto/query-movement.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 
 /**
@@ -15,8 +16,8 @@ export class MovementsController {
 
   @Get()
   @RequirePermissions('asset.view')
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query() query: QueryMovementDto) {
+    return this.service.findAll(query);
   }
 
   @Get('asset/:assetId')

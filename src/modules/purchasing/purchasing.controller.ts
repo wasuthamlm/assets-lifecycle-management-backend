@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PurchasingService } from './purchasing.service';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
 import { UpdatePurchaseOrderStatusDto } from './dto/update-purchase-order-status.dto';
+import { QueryPurchaseOrderDto } from './dto/query-purchase-order.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { requireEmployeeId } from '@common/utils/require-employee-id.util';
@@ -20,7 +21,7 @@ export class PurchasingController {
   }
 
   @Get() @RequirePermissions('po.view')
-  findAll() { return this.service.findAll(); }
+  findAll(@Query() query: QueryPurchaseOrderDto) { return this.service.findAll(query); }
 
   @Get(':id') @RequirePermissions('po.view')
   findOne(@Param('id', ParseIntPipe) id: number) { return this.service.findOne(id); }

@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { DisposalService } from './disposal.service';
 import { CreateDisposalDto } from './dto/create-disposal.dto';
+import { QueryDisposalDto } from './dto/query-disposal.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { requireEmployeeId } from '@common/utils/require-employee-id.util';
@@ -19,7 +20,7 @@ export class DisposalController {
   }
 
   @Get() @RequirePermissions('disposal.view')
-  findAll() { return this.service.findAll(); }
+  findAll(@Query() query: QueryDisposalDto) { return this.service.findAll(query); }
 
   @Get(':id') @RequirePermissions('disposal.view')
   findOne(@Param('id', ParseIntPipe) id: number) { return this.service.findOne(id); }

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsDateString,
   IsInt,
@@ -63,6 +64,7 @@ export class CreateGoodsReceiptDto {
 
   @ApiProperty({ type: [ReceiptItemInput] })
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => ReceiptItemInput)
   items: ReceiptItemInput[];
