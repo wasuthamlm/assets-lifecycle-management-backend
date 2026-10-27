@@ -10,6 +10,7 @@ import { Location } from '../locations/entities/location.entity';
 import { Vendor } from '../vendors/entities/vendor.entity';
 import { IssueAssetDto } from './dto/issue-asset.dto';
 import { ReturnAssetDto } from './dto/return-asset.dto';
+import { QueryAssignmentDto } from './dto/query-assignment.dto';
 import { ApprovalStatus, AssetStatus, HolderType, MovementType, ReturnCondition } from '@common/enums';
 import { MovementsService } from '../movements/movements.service';
 import { assertAssetStatus } from '@common/utils/assert-asset-status.util';
@@ -186,6 +187,19 @@ export class AssignmentsService {
   async findByAsset(assetId: number) {
     const assignments = await this.repo.find({ where: { assetId }, order: { issuedDate: 'DESC' } });
     return this.attachHolders(assignments);
+  }
+
+  /** ประวัติการเบิก-จ่าย/รับคืนทั้งหมดของทุกคน (ทั้งที่คืนแล้วและยังไม่คืน) ล่าสุดก่อน — แบ่งหน้าเพราะโตขึ้นเรื่อยๆ */
+  async findAll(query: QueryAssignmentDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const [rows, total] = await this.repo.findAndCount({
+      relations: ['asset', 'issuedByEmployee'],
+      order: { issuedDate: 'DESC', assignmentId: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return { data: await this.attachHolders(rows), total, page, limit };
   }
 
   /** ทรัพย์สินที่ยังไม่ถูกคืนทั้งหมด — คิวสำหรับทีม IT รับของคืน เรียงตามกำหนดคืนใกล้สุดก่อน (เกินกำหนดขึ้นก่อน) */

@@ -2,6 +2,16 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import { RequisitionsService } from './requisitions.service';
 import { ApprovalStatus, AssetStatus, AssignmentType, HolderType, NotificationType, RequestType } from '@common/enums';
 
+// mock query ของ RequisitionsService.findItAdminIds() — คืนพนักงาน role it_admin ตาม id ที่ส่งมา
+function itAdminQueryBuilder(adminIds: number[]) {
+  return {
+    innerJoin: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue(adminIds.map((employeeId) => ({ employeeId }))),
+  };
+}
+
 describe('RequisitionsService#findOne (ownership scoping)', () => {
   const buildService = (requisition: any) => {
     const repo = { findOne: jest.fn().mockResolvedValue(requisition) } as any;
@@ -133,7 +143,10 @@ describe('RequisitionsService#create (on behalf of)', () => {
     const repo = {} as any;
     const itemRepo = {} as any;
     const approvalRepo = {} as any;
-    const employeeRepo = { findOne: jest.fn().mockResolvedValue(employee) } as any;
+    const employeeRepo = {
+      findOne: jest.fn().mockResolvedValue(employee),
+      createQueryBuilder: jest.fn(() => itAdminQueryBuilder([5])),
+    } as any;
     const assetRepo = assetRepoOverride ?? ({} as any);
     const dataSource = { transaction: jest.fn() } as any;
     const notifications = { notify: jest.fn() } as any;
@@ -159,7 +172,7 @@ describe('RequisitionsService#create (on behalf of)', () => {
     approverIds: [5],
   } as any;
 
-  it('rejects onBehalfOfEmployeeId without requisition.view_all, before touching the transaction', async () => {
+  it('rejects onBehalfOfEmployeeId without requisition.create_on_behalf, before touching the transaction', async () => {
     const { service, dataSource } = buildService({ employeeId: 20 });
     await expect(
       service.create({ ...baseDto, onBehalfOfEmployeeId: 20 }, { employeeId: 10, permissions: [] }),
@@ -167,12 +180,20 @@ describe('RequisitionsService#create (on behalf of)', () => {
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
-  it('rejects a non-existent onBehalfOfEmployeeId even with requisition.view_all', async () => {
+  it('rejects onBehalfOfEmployeeId for a role that can view all requisitions but not request on behalf', async () => {
+    const { service, dataSource } = buildService({ employeeId: 20 });
+    await expect(
+      service.create({ ...baseDto, onBehalfOfEmployeeId: 20 }, { employeeId: 10, permissions: ['requisition.view_all'] }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-existent onBehalfOfEmployeeId even with requisition.create_on_behalf', async () => {
     const { service } = buildService(null);
     await expect(
       service.create(
         { ...baseDto, onBehalfOfEmployeeId: 999 },
-        { employeeId: 10, permissions: ['requisition.view_all'] },
+        { employeeId: 10, permissions: ['requisition.create_on_behalf'] },
       ),
     ).rejects.toThrow(NotFoundException);
   });
@@ -193,6 +214,30 @@ describe('RequisitionsService#create (on behalf of)', () => {
     const assetRepo = { find: jest.fn().mockResolvedValue([]) } as any;
     const { service } = buildService(null, assetRepo);
     await expect(service.create(baseDto, { employeeId: 10, permissions: [] })).rejects.toThrow(NotFoundException);
+  });
+
+  const hrOnlyNotebook = {
+    assetId: 1,
+    assetName: 'Notebook',
+    serialNumber: 'SN1',
+    currentStatus: 'in_stock',
+    category: { categoryName: 'Notebook', requiresHrRequest: false, parent: { requiresHrRequest: true } },
+  };
+
+  it('rejects an HR-only category (incl. via parent) for an employee without requisition.create_on_behalf', async () => {
+    const assetRepo = { find: jest.fn().mockResolvedValue([hrOnlyNotebook]) } as any;
+    const { service, dataSource } = buildService(null, assetRepo);
+    await expect(service.create(baseDto, { employeeId: 10, permissions: [] })).rejects.toThrow(ForbiddenException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('lets HR request an HR-only category for themselves', async () => {
+    const assetRepo = { find: jest.fn().mockResolvedValue([hrOnlyNotebook]) } as any;
+    const { service } = buildService({ employeeId: 10 }, assetRepo);
+    // ผ่านด่าน HR-only ไปถึง transaction ได้ — mock transaction ว่างจึง reject ด้วยเหตุอื่น ไม่ใช่ Forbidden
+    await expect(
+      service.create(baseDto, { employeeId: 10, permissions: ['requisition.create_on_behalf'] }),
+    ).rejects.not.toThrow(ForbiddenException);
   });
 });
 
@@ -229,7 +274,10 @@ describe('RequisitionsService#create (documentInfo snapshot)', () => {
     const repo = {} as any;
     const itemRepo = {} as any;
     const approvalRepo = {} as any;
-    const employeeRepo = { findOne: jest.fn().mockResolvedValue(requester) } as any;
+    const employeeRepo = {
+      findOne: jest.fn().mockResolvedValue(requester),
+      createQueryBuilder: jest.fn(() => itAdminQueryBuilder([5])),
+    } as any;
     const assetRepo = {
       find: jest.fn().mockResolvedValue([{ assetId: 1, assetName: 'Notebook', serialNumber: 'SN1', currentStatus: AssetStatus.IN_STOCK }]),
     } as any;
@@ -472,6 +520,26 @@ describe('RequisitionsService#approve (concurrency-safe)', () => {
     );
   });
 
+  it('issues to the recipient (requestedFor) and notifies them when HR requested on their behalf', async () => {
+    const requisition = {
+      requisitionId: 1,
+      requestedBy: 10,
+      requestedFor: 77,
+      requisitionNo: 'Req-Equipment-1',
+      requestType: RequestType.WITHDRAW,
+      dueDate: null,
+      overallStatus: ApprovalStatus.PENDING,
+    };
+    const approvals = [{ requisitionId: 1, approvalLevel: 1, approverId: 5, status: ApprovalStatus.PENDING }];
+    const items = [{ assetId: 42, stockItemId: null }];
+    const { service, assignments, notifications } = buildService({ requisition, approvals, items });
+
+    await service.approve(1, { status: ApprovalStatus.APPROVED } as any, 5);
+
+    expect(assignments.issue).toHaveBeenCalledWith(expect.objectContaining({ assetId: 42, holderId: 77 }), 5);
+    expect(notifications.notify).toHaveBeenCalledWith(77, NotificationType.REQUISITION_APPROVED, expect.any(String), expect.any(String), 'requisition', 1);
+  });
+
   it('does not auto-issue anything when the requisition is still waiting on another approval level', async () => {
     const requisition = {
       requisitionId: 1,
@@ -523,5 +591,202 @@ describe('RequisitionsService#approve (concurrency-safe)', () => {
     await expect(service.approve(1, { status: ApprovalStatus.APPROVED } as any, 999)).rejects.toThrow(
       ForbiddenException,
     );
+  });
+});
+
+describe('RequisitionsService#create (new employee not yet in the system)', () => {
+  function buildService(existingEmployee: any = null) {
+    const manager = {
+      query: jest.fn().mockResolvedValue(undefined),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      }),
+      create: jest.fn((_entity, data) => data),
+      save: jest.fn(async (data) => {
+        if (Array.isArray(data)) return data;
+        if ('employeeCode' in data) return { ...data, employeeId: 77 };
+        if (!('requisitionId' in data)) data.requisitionId = 1;
+        return data;
+      }),
+      findOne: jest.fn().mockImplementation((_entity, opts) =>
+        Promise.resolve(
+          opts?.where?.employeeId === 77
+            ? { employeeId: 77, fullName: 'พนักงาน ใหม่', position: 'Engineer', department: { departmentName: 'IT' } }
+            : { requisitionId: 1, requisitionNo: 'Req-Equipment-1' },
+        ),
+      ),
+    };
+    const employeeRepo = {
+      findOne: jest.fn().mockResolvedValue(existingEmployee),
+      createQueryBuilder: jest.fn(() => itAdminQueryBuilder([5])),
+    } as any;
+    const assetRepo = {
+      find: jest.fn().mockResolvedValue([{ assetId: 1, assetName: 'Notebook', serialNumber: 'SN1', currentStatus: AssetStatus.IN_STOCK }]),
+    } as any;
+    const dataSource = { transaction: jest.fn((cb) => cb(manager)) } as any;
+    const service = new RequisitionsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      employeeRepo,
+      assetRepo,
+      dataSource,
+      { notify: jest.fn() } as any,
+      {} as any,
+      {} as any,
+    );
+    return { service, manager, dataSource };
+  }
+
+  const baseDto = {
+    requestType: RequestType.WITHDRAW,
+    items: [{ assetId: 1, quantity: 1 }],
+    approverIds: [5],
+    newEmployee: { employeeCode: ' EMP-0099 ', fullName: ' พนักงาน ใหม่ ', position: 'Engineer', email: 'New.Hire@MillimedThailand.com' },
+  } as any;
+  const hr = { employeeId: 10, permissions: ['requisition.create_on_behalf'] };
+
+  it('creates the employee inside the transaction as the recipient, keeping HR as the requester', async () => {
+    const { service, manager } = buildService();
+
+    await service.create(baseDto, hr);
+
+    expect(manager.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ employeeCode: 'EMP-0099', fullName: 'พนักงาน ใหม่', email: 'new.hire@millimedthailand.com' }),
+    );
+    const requisitionArg = manager.create.mock.calls.find(([, data]) => 'documentInfo' in data)![1];
+    expect(requisitionArg.requestedBy).toBe(hr.employeeId);
+    expect(requisitionArg.requestedFor).toBe(77);
+    expect(requisitionArg.documentInfo).toEqual(expect.objectContaining({ position: 'Engineer', department: 'IT' }));
+  });
+
+  it('rejects without requisition.create_on_behalf, before touching the transaction', async () => {
+    const { service, dataSource } = buildService();
+    await expect(service.create(baseDto, { employeeId: 10, permissions: [] })).rejects.toThrow(ForbiddenException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an employeeCode that already exists', async () => {
+    const { service } = buildService({ employeeId: 3, employeeCode: 'EMP-0099' });
+    await expect(service.create(baseDto, hr)).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects sending both newEmployee and onBehalfOfEmployeeId', async () => {
+    const { service } = buildService();
+    await expect(service.create({ ...baseDto, onBehalfOfEmployeeId: 20 }, hr)).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('RequisitionsService#create (approver = it_admin)', () => {
+  function buildService(adminIds: number[], employee: any = { employeeId: 10, fullName: 'สมชาย ใจดี' }) {
+    const manager = {
+      query: jest.fn().mockResolvedValue(undefined),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      }),
+      create: jest.fn((_entity, data) => data),
+      save: jest.fn(async (data) => {
+        if (!Array.isArray(data) && 'documentInfo' in data) data.requisitionId = 1;
+        return data;
+      }),
+      findOne: jest.fn().mockResolvedValue({ requisitionId: 1, requisitionNo: 'Req-Equipment-1', requestedBy: 10, requestedFor: null }),
+    };
+    const repo = { findOne: jest.fn().mockResolvedValue({ requisitionId: 1, overallStatus: ApprovalStatus.APPROVED }) } as any;
+    const itemRepo = { find: jest.fn().mockResolvedValue([{ assetId: 1 }]) } as any;
+    const employeeRepo = {
+      findOne: jest.fn().mockResolvedValue(employee),
+      createQueryBuilder: jest.fn(() => itAdminQueryBuilder(adminIds)),
+    } as any;
+    const assetRepo = {
+      find: jest.fn().mockResolvedValue([{ assetId: 1, assetName: 'Notebook', serialNumber: 'SN1', currentStatus: AssetStatus.IN_STOCK }]),
+    } as any;
+    const dataSource = { transaction: jest.fn((cb) => cb(manager)) } as any;
+    const notifications = { notify: jest.fn() } as any;
+    const assignments = { issue: jest.fn().mockResolvedValue(undefined) } as any;
+    const service = new RequisitionsService(
+      repo,
+      itemRepo,
+      {} as any,
+      employeeRepo,
+      assetRepo,
+      dataSource,
+      notifications,
+      {} as any,
+      assignments,
+    );
+    const approvalArgs = () => manager.create.mock.calls.filter(([, data]) => 'approvalLevel' in data).map(([, data]) => data);
+    const approvalArg = () => approvalArgs()[0];
+    const requisitionArg = () => manager.create.mock.calls.find(([, data]) => 'documentInfo' in data)?.[1];
+    return { service, dataSource, notifications, assignments, approvalArg, approvalArgs, requisitionArg };
+  }
+
+  const dto = { requestType: RequestType.WITHDRAW, items: [{ assetId: 1, quantity: 1 }] } as any;
+
+  it('uses the chosen it_admin as a pending approver and notifies them', async () => {
+    const { service, notifications, assignments, approvalArg, requisitionArg } = buildService([5]);
+    await service.create({ ...dto, approverIds: [5] }, { employeeId: 10, permissions: [] });
+
+    expect(approvalArg()).toEqual(expect.objectContaining({ approvalLevel: 1, approverId: 5, status: ApprovalStatus.PENDING }));
+    expect(requisitionArg().overallStatus).toBe(ApprovalStatus.PENDING);
+    expect(notifications.notify).toHaveBeenCalledWith(5, NotificationType.REQUISITION_PENDING_APPROVAL, expect.any(String), expect.any(String), 'requisition', 1);
+    expect(assignments.issue).not.toHaveBeenCalled();
+  });
+
+  it('creates one approval level per chosen it_admin, in order', async () => {
+    const { service, approvalArgs } = buildService([5, 6]);
+    await service.create({ ...dto, approverIds: [6, 5] }, { employeeId: 10, permissions: [] });
+
+    expect(approvalArgs().map((a) => [a.approvalLevel, a.approverId])).toEqual([
+      [1, 6],
+      [2, 5],
+    ]);
+  });
+
+  it('rejects when no approver is chosen, before touching the transaction', async () => {
+    const { service, dataSource } = buildService([5]);
+    await expect(service.create(dto, { employeeId: 10, permissions: [] })).rejects.toThrow(BadRequestException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an approver who is not an it_admin, before touching the transaction', async () => {
+    const { service, dataSource } = buildService([5]);
+    await expect(service.create({ ...dto, approverIds: [5, 99] }, { employeeId: 10, permissions: [] })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects the same approver chosen twice', async () => {
+    const { service } = buildService([5]);
+    await expect(service.create({ ...dto, approverIds: [5, 5] }, { employeeId: 10, permissions: [] })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('auto-approves and issues the assets when the requester is an it_admin, ignoring approverIds', async () => {
+    const { service, notifications, assignments, approvalArgs, approvalArg, requisitionArg } = buildService([5, 10]);
+    await service.create({ ...dto, approverIds: [5] }, { employeeId: 10, permissions: ['requisition.create_on_behalf'] });
+
+    expect(approvalArgs()).toHaveLength(1);
+    expect(approvalArg()).toEqual(expect.objectContaining({ approverId: 10, status: ApprovalStatus.APPROVED, actionedAt: expect.any(Date) }));
+    expect(requisitionArg().overallStatus).toBe(ApprovalStatus.APPROVED);
+    expect(assignments.issue).toHaveBeenCalledWith(expect.objectContaining({ assetId: 1, holderId: 10 }), 10);
+    expect(notifications.notify).not.toHaveBeenCalledWith(expect.anything(), NotificationType.REQUISITION_PENDING_APPROVAL, expect.anything(), expect.anything(), expect.anything(), expect.anything());
+  });
+
+  it('auto-approves when HR requests on behalf of an it_admin recipient', async () => {
+    const { service, approvalArg, requisitionArg } = buildService([20], { employeeId: 20, fullName: 'แอดมิน ไอที' });
+    await service.create(
+      { ...dto, onBehalfOfEmployeeId: 20 },
+      { employeeId: 10, permissions: ['requisition.create_on_behalf'] },
+    );
+
+    expect(approvalArg()).toEqual(expect.objectContaining({ approverId: 20, status: ApprovalStatus.APPROVED }));
+    expect(requisitionArg().overallStatus).toBe(ApprovalStatus.APPROVED);
   });
 });

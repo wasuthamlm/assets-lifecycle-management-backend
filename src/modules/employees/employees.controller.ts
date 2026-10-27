@@ -3,7 +3,6 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
-import { PreRegisterEmployeeDto } from './dto/pre-register-employee.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 
 @ApiTags('employees')
@@ -18,21 +17,13 @@ export class EmployeesController {
     return this.service.create(dto);
   }
 
-  // ลงทะเบียนพนักงานใหม่ล่วงหน้า: สร้าง employee + user login + assign role ในทีเดียว
-  // ต้องมีสิทธิ์ครบทั้ง 3 อย่างเพราะทำ 3 การกระทำนี้พร้อมกัน
-  @Post('pre-register')
-  @RequirePermissions('employee.create', 'user.create', 'rbac.manage')
-  preRegister(@Body() dto: PreRegisterEmployeeDto) {
-    return this.service.preRegister(dto);
-  }
-
   @Get()
   @RequirePermissions('employee.view_all')
   findAll() {
     return this.service.findAll();
   }
 
-  // รายชื่อพนักงานที่มีสิทธิ์ requisition.approve เท่านั้น (แบบย่อ id + ชื่อ) ไว้เลือกผู้อนุมัติในฟอร์ม —
+  // รายชื่อผู้ดูแลระบบ IT (role it_admin) เท่านั้น (แบบย่อ id + ชื่อ) ไว้เลือกผู้อนุมัติในฟอร์ม —
   // เปิดให้ user ที่ login แล้วทุกคนเรียกได้ ไม่ต้องมีสิทธิ์ employee.view_all (ดู EmployeesService.findDirectory)
   @Get('directory')
   directory() {

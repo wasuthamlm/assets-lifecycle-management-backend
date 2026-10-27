@@ -42,6 +42,18 @@ export class Requisition extends BaseEntity {
   @JoinColumn({ name: 'requested_by' })
   requestedByEmployee: Employee;
 
+  /**
+   * ผู้รับทรัพย์สิน เมื่อ HR เบิก/ยืมให้คนอื่น (พนักงานในระบบ หรือพนักงานใหม่) — ผู้ขอเบิก (requestedBy) ยังเป็น HR
+   * null = ผู้ขอเบิกรับเอง; ของจะจ่ายให้ requestedFor ?? requestedBy ตอนอนุมัติครบ (ดู autoIssueApprovedItems)
+   */
+  @Column({ name: 'requested_for', type: 'int', nullable: true })
+  @Index('IDX_requisitions_requested_for')
+  requestedFor: number | null;
+
+  @ManyToOne(() => Employee, { nullable: true })
+  @JoinColumn({ name: 'requested_for' })
+  requestedForEmployee: Employee | null;
+
   @Column({ type: 'enum', enum: RequestType })
   requestType: RequestType;
 

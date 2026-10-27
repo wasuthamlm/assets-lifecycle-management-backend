@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
-import { Requisition } from './entities/requisition.entity';
+import { DataSource, EntityManager, In, Raw, Repository } from 'typeorm';
+import { Requisition, RequisitionDocumentInfo } from './entities/requisition.entity';
 import { RequisitionItem } from './entities/requisition-item.entity';
 import { RequisitionApproval } from './entities/requisition-approval.entity';
 import { Employee } from '../employees/entities/employee.entity';
@@ -18,6 +18,8 @@ import { renderRequisitionDocumentHtml } from './requisition-document.template';
 
 /**
  * Multi-level approval: สร้าง requisition_approvals หนึ่งแถวต่อ 1 approver ตามลำดับ (approverIds[0] = level 1, ...)
+ * ผู้อนุมัติทุกคนต้องเป็นผู้ดูแลระบบ IT (role it_admin) — ถ้า it_admin เป็นผู้ขอหรือผู้รับทรัพย์สินเอง ใบขอจะ
+ * อนุมัติอัตโนมัติทันที เพราะอนุมัติใบของตัวเองไม่ได้ (ดู create())
  * requisition จะเปลี่ยนเป็น approved ก็ต่อเมื่อ "ทุกระดับ" approve ครบ, ถ้ามีระดับใดถูก reject → requisition = rejected ทันที
  */
 @Injectable()
@@ -28,6 +30,9 @@ export class RequisitionsService {
     'requestedByEmployee',
     'requestedByEmployee.department',
     'requestedByEmployee.department.company',
+    'requestedForEmployee',
+    'requestedForEmployee.department',
+    'requestedForEmployee.department.company',
     'items',
     'items.asset',
     'items.stockItem',
@@ -75,15 +80,61 @@ export class RequisitionsService {
     return `${prefix}${maxSeq + 1}`;
   }
 
+  private buildDocumentInfo(dto: CreateRequisitionDto, requester: Employee | null): RequisitionDocumentInfo {
+    return {
+      employeeNameEn: dto.employeeNameEn ?? null,
+      startDate: dto.startDate ?? null,
+      position: dto.position ?? requester?.position ?? null,
+      department: dto.department ?? requester?.department?.departmentName ?? null,
+      contactPhone: dto.contactPhone ?? requester?.phone ?? null,
+      accessories: dto.accessories
+        ? {
+            adapter: dto.accessories.adapter ?? false,
+            mouse: dto.accessories.mouse ?? false,
+            pen: dto.accessories.pen ?? false,
+            bag: dto.accessories.bag ?? false,
+            other: dto.accessories.other ?? null,
+          }
+        : null,
+    };
+  }
+
   async create(dto: CreateRequisitionDto, currentUser: { employeeId: number; permissions: string[] }) {
-    let requestedBy = currentUser.employeeId;
-    if (dto.onBehalfOfEmployeeId != null && dto.onBehalfOfEmployeeId !== currentUser.employeeId) {
-      if (!currentUser.permissions.includes('requisition.view_all')) {
-        throw new ForbiddenException('ต้องมีสิทธิ์ requisition.view_all ถึงจะเบิก/ยืมแทนพนักงานคนอื่นได้');
+    // ผู้ขอเบิกคือคนที่ทำรายการเสมอ (HR ที่เบิกให้คนอื่นก็ยังเป็นผู้ขอ) — ส่วนผู้รับทรัพย์สินเก็บแยกใน requestedFor
+    const requestedBy = currentUser.employeeId;
+    let requestedFor: number | null = null;
+    const newEmployee = dto.newEmployee
+      ? {
+          ...dto.newEmployee,
+          employeeCode: dto.newEmployee.employeeCode.trim(),
+          fullName: dto.newEmployee.fullName.trim(),
+          email: dto.newEmployee.email?.trim().toLowerCase() || undefined,
+        }
+      : null;
+    if (newEmployee) {
+      if (dto.onBehalfOfEmployeeId != null) {
+        throw new BadRequestException('ระบุผู้ขอเบิกได้แบบเดียว: เลือกพนักงานในระบบ หรือ กรอกพนักงานใหม่');
+      }
+      if (!currentUser.permissions.includes('requisition.create_on_behalf')) {
+        throw new ForbiddenException('พนักงานทั่วไปเบิก/ยืมได้เฉพาะให้ตัวเองเท่านั้น — การเบิกให้พนักงานใหม่ต้องทำโดย HR / IT admin');
+      }
+      const sameCode = await this.employeeRepo.findOne({ where: { employeeCode: newEmployee.employeeCode } });
+      if (sameCode) {
+        throw new ConflictException(`รหัสพนักงาน ${newEmployee.employeeCode} มีในระบบแล้ว — เลือกจากรายชื่อพนักงานแทน`);
+      }
+      if (newEmployee.email) {
+        const sameEmail = await this.employeeRepo.findOne({
+          where: { email: Raw((alias) => `lower(${alias}) = :email`, { email: newEmployee.email }) },
+        });
+        if (sameEmail) throw new ConflictException(`อีเมล ${newEmployee.email} เป็นของพนักงานในระบบอยู่แล้ว`);
+      }
+    } else if (dto.onBehalfOfEmployeeId != null && dto.onBehalfOfEmployeeId !== currentUser.employeeId) {
+      if (!currentUser.permissions.includes('requisition.create_on_behalf')) {
+        throw new ForbiddenException('พนักงานทั่วไปเบิก/ยืมได้เฉพาะให้ตัวเองเท่านั้น — การเบิกให้คนอื่นต้องทำโดย HR / IT admin');
       }
       const onBehalfOf = await this.employeeRepo.findOne({ where: { employeeId: dto.onBehalfOfEmployeeId } });
       if (!onBehalfOf) throw new NotFoundException(`ไม่พบพนักงาน id ${dto.onBehalfOfEmployeeId}`);
-      requestedBy = onBehalfOf.employeeId;
+      requestedFor = onBehalfOf.employeeId;
     }
 
     for (const item of dto.items) {
@@ -103,10 +154,21 @@ export class RequisitionsService {
       throw new BadRequestException('มีทรัพย์สินชิ้นเดียวกันถูกเลือกซ้ำหลายรายการในคำขอเดียว');
     }
     if (requestedAssetIds.length > 0) {
-      const requestedAssets = await this.assetRepo.find({ where: { assetId: In(requestedAssetIds) } });
+      const requestedAssets = await this.assetRepo.find({
+        where: { assetId: In(requestedAssetIds) },
+        relations: { category: { parent: true } },
+      });
+      const canRequestHrOnly = currentUser.permissions.includes('requisition.create_on_behalf');
       for (const assetId of requestedAssetIds) {
         const asset = requestedAssets.find((a) => a.assetId === assetId);
         if (!asset) throw new NotFoundException(`ไม่พบทรัพย์สิน id ${assetId}`);
+        // หมวดที่ตั้ง requiresHrRequest (เช่น notebook / tablet) ต้องให้ HR ทำรายการให้เท่านั้น — HR เองเบิกให้
+        // ตัวเองหรือคนอื่นได้ตามปกติ; เช็คทั้งหมวดย่อยและหมวดหลัก ให้ตรงกับ requiresHrRequest() ฝั่ง frontend
+        if (!canRequestHrOnly && (asset.category?.requiresHrRequest || asset.category?.parent?.requiresHrRequest)) {
+          throw new ForbiddenException(
+            `"${asset.assetName}" (หมวด ${asset.category.categoryName}) ต้องให้ HR เป็นผู้ทำรายการเบิก/ยืมให้ กรุณาติดต่อ HR`,
+          );
+        }
         if (asset.currentStatus !== AssetStatus.IN_STOCK) {
           throw new ConflictException(
             `ทรัพย์สิน "${asset.assetName}" (S/N: ${asset.serialNumber ?? '-'}) ถูกเบิก/ยืมไปแล้วโดยคนอื่นก่อนหน้านี้ กรุณาเลือกเครื่องอื่น`,
@@ -115,50 +177,68 @@ export class RequisitionsService {
       }
     }
 
-    const uniqueApprovers = new Set(dto.approverIds);
-    if (uniqueApprovers.size !== dto.approverIds.length) {
-      throw new BadRequestException('approverIds มีรายชื่อซ้ำกัน');
+    // ผู้อนุมัติต้องเป็น it_admin — ถ้า it_admin เป็นผู้ขอ/ผู้รับเอง อนุมัติใบตัวเองไม่ได้ จึงอนุมัติอัตโนมัติแทน
+    // การรอใคร (ไม่อ่าน dto.approverIds); พนักงานใหม่ยังไม่มี id และไม่มีทางเป็น it_admin อยู่แล้ว
+    const itAdminIds = await this.findItAdminIds();
+    const selfAdminId = [requestedBy, requestedFor].find((id): id is number => id != null && itAdminIds.includes(id));
+    const approverIds = selfAdminId != null ? [selfAdminId] : (dto.approverIds ?? []);
+    if (selfAdminId == null) {
+      if (approverIds.length === 0) {
+        throw new BadRequestException('กรุณาเลือกผู้อนุมัติอย่างน้อย 1 คน');
+      }
+      if (new Set(approverIds).size !== approverIds.length) {
+        throw new BadRequestException('approverIds มีรายชื่อซ้ำกัน');
+      }
+      // ผู้ขอ/ผู้รับที่ไม่ใช่ it_admin ไม่มีทางผ่านเช็คนี้ จึงกันการอนุมัติใบของตัวเองไปในตัวด้วย
+      if (approverIds.some((id) => !itAdminIds.includes(id))) {
+        throw new BadRequestException('ผู้อนุมัติต้องเป็นผู้ดูแลระบบ IT (IT Admin) เท่านั้น');
+      }
     }
-    if (uniqueApprovers.has(requestedBy)) {
-      throw new BadRequestException('ผู้ขอเบิก/ยืมไม่สามารถเป็นผู้อนุมัติของใบขอตัวเองได้');
+    const autoApproved = selfAdminId != null;
+
+    // โหลดข้อมูล employee ผู้รับทรัพย์สิน (พร้อม department) ไว้ default ค่าที่ผู้ใช้ไม่ได้กรอกมาให้ใบส่งมอบ-ส่งคืน
+    // ทรัพย์สิน (ดู GET /requisitions/:id/document) — ผู้รับ = requestedFor ถ้าเบิกให้คนอื่น ไม่งั้นคือผู้ขอเอง
+    // ต้อง query แยกเพราะด้านบนยังไม่ได้ join department มาด้วย; พนักงานใหม่ค่อยโหลดหลังสร้างใน transaction
+    let recipientEmployee: Employee | null = null;
+    if (!newEmployee) {
+      const recipientId = requestedFor ?? requestedBy;
+      recipientEmployee = await this.employeeRepo.findOne({
+        where: { employeeId: recipientId },
+        relations: ['department'],
+      });
+      if (!recipientEmployee) throw new NotFoundException(`ไม่พบพนักงาน id ${recipientId}`);
     }
-
-    // โหลดข้อมูล employee ผู้ขอ (พร้อม department) ไว้ default ค่าที่ผู้ใช้ไม่ได้กรอกมาให้ใบส่งมอบ-ส่งคืน
-    // ทรัพย์สิน (ดู GET /requisitions/:id/document) — ต้อง query แยกเพราะทั้ง 2 branch ด้านบน
-    // (ขอเอง / onBehalfOf) ยังไม่ได้ join department มาด้วย
-    const requesterEmployee = await this.employeeRepo.findOne({
-      where: { employeeId: requestedBy },
-      relations: ['department'],
-    });
-    if (!requesterEmployee) throw new NotFoundException(`ไม่พบพนักงาน id ${requestedBy}`);
-
-    const documentInfo = {
-      employeeNameEn: dto.employeeNameEn ?? null,
-      startDate: dto.startDate ?? null,
-      position: dto.position ?? requesterEmployee.position ?? null,
-      department: dto.department ?? requesterEmployee.department?.departmentName ?? null,
-      contactPhone: dto.contactPhone ?? requesterEmployee.phone ?? null,
-      accessories: dto.accessories
-        ? {
-            adapter: dto.accessories.adapter ?? false,
-            mouse: dto.accessories.mouse ?? false,
-            pen: dto.accessories.pen ?? false,
-            bag: dto.accessories.bag ?? false,
-            other: dto.accessories.other ?? null,
-          }
-        : null,
-    };
 
     const created = await this.dataSource.transaction(async (manager) => {
+      // สร้างพนักงานใหม่ใน transaction เดียวกับใบขอ — ใบขอสร้างไม่สำเร็จจะได้ไม่มีข้อมูลพนักงานค้างอยู่
+      if (newEmployee) {
+        const employee = await manager.save(
+          manager.create(Employee, {
+            employeeCode: newEmployee.employeeCode,
+            fullName: newEmployee.fullName,
+            departmentId: newEmployee.departmentId,
+            position: newEmployee.position,
+            email: newEmployee.email,
+          }),
+        );
+        requestedFor = employee.employeeId;
+        recipientEmployee = await manager.findOne(Employee, {
+          where: { employeeId: employee.employeeId },
+          relations: ['department'],
+        });
+      }
+      const documentInfo = this.buildDocumentInfo(dto, recipientEmployee);
+
       const requisitionNo = await this.generateRequisitionNo(manager, dto.requestType);
       const requisition = manager.create(Requisition, {
         requisitionNo,
         requestedBy,
+        requestedFor,
         requestType: dto.requestType,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         reason: dto.reason,
         documentInfo,
-        overallStatus: ApprovalStatus.PENDING,
+        overallStatus: autoApproved ? ApprovalStatus.APPROVED : ApprovalStatus.PENDING,
       });
       await manager.save(requisition);
 
@@ -167,19 +247,25 @@ export class RequisitionsService {
       );
       await manager.save(items);
 
-      const approvals = dto.approverIds.map((approverId, idx) =>
+      const approvals = approverIds.map((approverId, idx) =>
         manager.create(RequisitionApproval, {
           requisitionId: requisition.requisitionId,
           approvalLevel: idx + 1,
           approverId,
-          status: ApprovalStatus.PENDING,
+          ...(autoApproved
+            ? {
+                status: ApprovalStatus.APPROVED,
+                actionedAt: new Date(),
+                comment: 'อนุมัติอัตโนมัติ — ผู้ดูแลระบบ IT เป็นผู้ขอ/ผู้รับเอง',
+              }
+            : { status: ApprovalStatus.PENDING }),
         }),
       );
       await manager.save(approvals);
 
       const found = await manager.findOne(Requisition, {
         where: { requisitionId: requisition.requisitionId },
-        relations: ['requestedByEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
+        relations: ['requestedByEmployee', 'requestedForEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
       });
       if (!found) throw new NotFoundException(`ไม่พบใบขอเบิก/ยืม id ${requisition.requisitionId}`);
       return found;
@@ -187,8 +273,12 @@ export class RequisitionsService {
 
     // แจ้งเตือนต้องอยู่นอก transaction เสมอ — ใช้ connection คนละตัวจาก manager (ผ่าน this.repo ปกติ)
     // และอาจ await ส่งอีเมล ถ้าอยู่ในนี้จะกัน connection ของ transaction ค้างไว้โดยไม่จำเป็น
+    if (selfAdminId != null) {
+      await this.onFullyApproved(created, selfAdminId);
+      return this.getByIdOrThrow(created.requisitionId);
+    }
     await this.notifications.notify(
-      dto.approverIds[0],
+      approverIds[0],
       NotificationType.REQUISITION_PENDING_APPROVAL,
       'มีใบขอเบิก/ยืมรออนุมัติ',
       `ใบขอ ${created.requisitionNo} รอการอนุมัติจากคุณ`,
@@ -203,8 +293,9 @@ export class RequisitionsService {
     return this.queryWithFilters(query);
   }
 
-  findMine(requestedBy: number, query: QueryRequisitionDto) {
-    return this.queryWithFilters(query, requestedBy);
+  // "ของฉัน" = ใบที่ฉันเป็นผู้ขอ หรือเป็นผู้รับทรัพย์สิน (HR เบิกให้ / พนักงานใหม่ที่ผูกบัญชีทีหลัง)
+  findMine(employeeId: number, query: QueryRequisitionDto) {
+    return this.queryWithFilters(query, employeeId);
   }
 
   /**
@@ -213,16 +304,20 @@ export class RequisitionsService {
    * แถวจะถูกคูณจาก join ทำให้ skip/take และ total นับผิดเพี้ยน (deep-pagination bug แบบคลาสสิกของ TypeORM)
    * รอบสองค่อยดึง relations แบบเต็มเฉพาะ id ที่ได้จากหน้านี้เท่านั้น
    */
-  private async queryWithFilters(query: QueryRequisitionDto, requestedBy?: number) {
+  private async queryWithFilters(query: QueryRequisitionDto, mineEmployeeId?: number) {
     const qb = this.repo.createQueryBuilder('r');
 
-    if (requestedBy != null) qb.andWhere('r.requestedBy = :requestedBy', { requestedBy });
+    if (mineEmployeeId != null) {
+      qb.andWhere('(r.requestedBy = :me OR r.requestedFor = :me)', { me: mineEmployeeId });
+    }
     if (query.search) {
       // join แค่นี้ (ไม่ leftJoinAndSelect) เพราะรอบนี้ใช้แค่กรอง/นับ ไม่ได้ดึงข้อมูล employee มาด้วย
       qb.leftJoin('r.requestedByEmployee', 'requester');
-      qb.andWhere('(r.requisitionNo ILIKE :s OR r.reason ILIKE :s OR requester.fullName ILIKE :s)', {
-        s: `%${query.search}%`,
-      });
+      qb.leftJoin('r.requestedForEmployee', 'recipient');
+      qb.andWhere(
+        '(r.requisitionNo ILIKE :s OR r.reason ILIKE :s OR requester.fullName ILIKE :s OR recipient.fullName ILIKE :s)',
+        { s: `%${query.search}%` },
+      );
     }
     if (query.status) qb.andWhere('r.overallStatus = :status', { status: query.status });
     if (query.requestType) qb.andWhere('r.requestType = :requestType', { requestType: query.requestType });
@@ -239,7 +334,7 @@ export class RequisitionsService {
     const ids = rows.map((r) => r.requisitionId);
     const withRelations = await this.repo.find({
       where: { requisitionId: In(ids) },
-      relations: ['requestedByEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
+      relations: ['requestedByEmployee', 'requestedForEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
     });
     // find() ไม่การันตี order ตาม ids ที่ส่งเข้าไป — เรียงกลับตาม order ของหน้านี้ (requisitionId DESC) เอง
     const byId = new Map(withRelations.map((r) => [r.requisitionId, r]));
@@ -252,7 +347,7 @@ export class RequisitionsService {
   private async getByIdOrThrow(id: number) {
     const r = await this.repo.findOne({
       where: { requisitionId: id },
-      relations: ['requestedByEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
+      relations: ['requestedByEmployee', 'requestedForEmployee', 'items', 'items.asset', 'approvals', 'approvals.approver'],
     });
     if (!r) throw new NotFoundException(`ไม่พบใบขอเบิก/ยืม id ${id}`);
     return r;
@@ -270,7 +365,8 @@ export class RequisitionsService {
     const r = await this.getByIdOrThrow(id);
     const canViewAll = currentUser.permissions.includes('requisition.view_all');
     const isApprover = r.approvals?.some((a) => a.approverId === currentUser.employeeId) ?? false;
-    if (!canViewAll && !isApprover && r.requestedBy !== currentUser.employeeId) {
+    const isOwner = r.requestedBy === currentUser.employeeId || r.requestedFor === currentUser.employeeId;
+    if (!canViewAll && !isApprover && !isOwner) {
       throw new ForbiddenException('คุณไม่มีสิทธิ์ดูใบขอเบิก/ยืมนี้');
     }
     return r;
@@ -410,10 +506,40 @@ export class RequisitionsService {
 
     const result = await this.getByIdOrThrow(id);
     if (result.overallStatus === ApprovalStatus.APPROVED) {
-      await this.autoIssueApprovedItems(result, approverId);
+      await this.onFullyApproved(result, approverId);
     }
 
     return this.getByIdOrThrow(id);
+  }
+
+  /** employee_id ของผู้ดูแลระบบ IT (role it_admin) ทั้งหมด — คนเดียวที่เป็นผู้อนุมัติใบขอเบิก/ยืมได้ (ดู create()) */
+  private async findItAdminIds(): Promise<number[]> {
+    const admins = await this.employeeRepo
+      .createQueryBuilder('e')
+      .innerJoin('e.employeeRoles', 'er')
+      .innerJoin('er.role', 'r')
+      .where('r.roleName = :roleName', { roleName: 'it_admin' })
+      .orderBy('e.employeeId', 'ASC')
+      .getMany();
+    return admins.map((a) => a.employeeId);
+  }
+
+  /**
+   * หลังใบขออนุมัติครบ (ทั้งกดอนุมัติใน approve() และอนุมัติอัตโนมัติตอน create()) — จ่ายทรัพย์สินให้ผู้รับ
+   * แล้วแจ้งผู้รับด้วยถ้า HR เบิกให้คนอื่น (ผู้ขอได้แจ้งเตือนแยกไปแล้ว หรือเป็นคนทำรายการเองอยู่แล้ว)
+   */
+  private async onFullyApproved(requisition: Requisition, issuedBy: number) {
+    await this.autoIssueApprovedItems(requisition, issuedBy);
+    if (requisition.requestedFor != null && requisition.requestedFor !== requisition.requestedBy) {
+      await this.notifications.notify(
+        requisition.requestedFor,
+        NotificationType.REQUISITION_APPROVED,
+        'มีทรัพย์สินเบิก/ยืมให้คุณ',
+        `ใบขอ ${requisition.requisitionNo} ได้รับการอนุมัติครบแล้ว ทรัพย์สินจะถูกส่งมอบให้คุณ`,
+        'requisition',
+        requisition.requisitionId,
+      );
+    }
   }
 
   /**
@@ -439,7 +565,7 @@ export class RequisitionsService {
             requisitionId: requisition.requisitionId,
             assignmentType,
             holderType: HolderType.EMPLOYEE,
-            holderId: requisition.requestedBy,
+            holderId: requisition.requestedFor ?? requisition.requestedBy,
             dueDate: requisition.dueDate ? new Date(requisition.dueDate).toISOString().slice(0, 10) : undefined,
           },
           issuedBy,

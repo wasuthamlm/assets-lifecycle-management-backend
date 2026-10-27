@@ -12,6 +12,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
 import { AllowedDomainsModule } from '../allowed-domains/allowed-domains.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { RolesPermissionsModule } from '../roles-permissions/roles-permissions.module';
 import { SupabaseIdentityService } from './supabase-identity.service';
 
 @Module({
@@ -22,6 +23,7 @@ import { SupabaseIdentityService } from './supabase-identity.service';
     MailModule,
     AllowedDomainsModule,
     NotificationsModule,
+    RolesPermissionsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

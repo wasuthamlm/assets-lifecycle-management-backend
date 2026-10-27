@@ -6,8 +6,10 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Min,
@@ -33,6 +35,28 @@ class AccessoriesInput {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() pen?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() bag?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() other?: string;
+}
+
+// พนักงานใหม่ที่ยังไม่มีในระบบ (มักยังไม่มีเมลด้วย) — HR กรอกตอนเบิกอุปกรณ์ให้ ระบบสร้าง employee ให้พร้อมใบขอ
+// พอคนนี้ได้เมลแล้ว login ครั้งแรก กรอกรหัสพนักงาน+ชื่อให้ตรง ระบบจะผูกบัญชีเข้ากับข้อมูลนี้ (ดู AuthService.completeEmployeeProfile)
+class NewEmployeeInput {
+  @ApiProperty({ example: 'EMP-0010', description: 'ใช้จับคู่ตอนพนักงาน login ครั้งแรก' })
+  @IsString()
+  @IsNotEmpty()
+  employeeCode: string;
+
+  @ApiProperty({ example: 'สมชาย ใจดี' })
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsInt() departmentId?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() position?: string;
+
+  @ApiPropertyOptional({ description: 'อีเมลบริษัท ถ้ามีแล้ว — ระบบจะผูกบัญชีให้อัตโนมัติตอน login' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
 
 export class CreateRequisitionDto {
@@ -83,12 +107,21 @@ export class CreateRequisitionDto {
   accessories?: AccessoriesInput;
 
   // สำหรับ hr เบิก/ยืมแทนพนักงานคนอื่น (เช่น เตรียมอุปกรณ์ให้พนักงานใหม่) — ถ้าใส่มา requestedBy (และผู้ครอบครอง
-  // ของหลังอนุมัติ) จะเป็นพนักงานคนนี้แทนคนที่ล็อกอินอยู่ ต้องมี requisition.view_all ถึงจะใช้ฟิลด์นี้ได้
+  // ของหลังอนุมัติ) จะเป็นพนักงานคนนี้แทนคนที่ล็อกอินอยู่ ต้องมี requisition.create_on_behalf ถึงจะใช้ฟิลด์นี้ได้
   // (ดู RequisitionsService.create) ไม่งั้น employee ทั่วไปจะสวมรอยเบิกในนามคนอื่นได้
-  @ApiPropertyOptional({ description: 'employee_id ของผู้ที่เบิก/ยืมแทน — ต้องมีสิทธิ์ requisition.view_all' })
+  @ApiPropertyOptional({ description: 'employee_id ของผู้ที่เบิก/ยืมแทน — ต้องมีสิทธิ์ requisition.create_on_behalf' })
   @IsOptional()
   @IsInt()
   onBehalfOfEmployeeId?: number;
+
+  @ApiPropertyOptional({
+    type: NewEmployeeInput,
+    description: 'เบิกให้พนักงานใหม่ที่ยังไม่มีในระบบ (ห้ามส่งพร้อม onBehalfOfEmployeeId) — ต้องมีสิทธิ์ requisition.create_on_behalf',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewEmployeeInput)
+  newEmployee?: NewEmployeeInput;
 
   @ApiProperty({ type: [RequisitionItemInput] })
   @IsArray()
@@ -97,9 +130,14 @@ export class CreateRequisitionDto {
   @Type(() => RequisitionItemInput)
   items: RequisitionItemInput[];
 
-  @ApiProperty({ type: [Number], description: 'employee_id ของผู้อนุมัติแต่ละลำดับชั้น เช่น [หัวหน้างาน, ผจก.] = multi-level' })
+  // ต้องเป็น it_admin ทุกคน และต้องมีอย่างน้อย 1 คน ยกเว้นใบที่อนุมัติอัตโนมัติ (it_admin เป็นผู้ขอ/ผู้รับเอง)
+  // ซึ่งจะไม่อ่านค่านี้ — เช็คใน RequisitionsService.create() เพราะขึ้นกับว่าผู้ขอ/ผู้รับเป็นใคร
+  @ApiPropertyOptional({
+    type: [Number],
+    description: 'employee_id ของผู้อนุมัติแต่ละลำดับชั้น (ต้องเป็น IT Admin) — ไม่ต้องส่งถ้า IT Admin เป็นผู้ขอ/ผู้รับเอง',
+  })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @IsInt({ each: true })
-  approverIds: number[];
+  approverIds?: number[];
 }

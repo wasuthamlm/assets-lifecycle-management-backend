@@ -6,10 +6,9 @@ import { Role } from '../roles-permissions/entities/role.entity';
 import { EmployeeRole } from '../roles-permissions/entities/employee-role.entity';
 import { EmployeesService } from './employees.service';
 import { EmployeesController } from './employees.controller';
-import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Employee, User, Role, EmployeeRole]), MailModule],
+  imports: [TypeOrmModule.forFeature([Employee, User, Role, EmployeeRole])],
   controllers: [EmployeesController],
   providers: [EmployeesService],
   exports: [EmployeesService, TypeOrmModule],

@@ -29,8 +29,8 @@ const PERMISSIONS = [
   'stock.manage', 'stock.view',
   'po.create', 'po.view', 'po.approve',
   'goods_receipt.create', 'goods_receipt.view',
-  'requisition.create', 'requisition.view_own', 'requisition.view_all', 'requisition.approve',
-  'assignment.issue', 'assignment.return',
+  'requisition.create', 'requisition.view_own', 'requisition.view_all', 'requisition.approve', 'requisition.create_on_behalf',
+  'assignment.issue', 'assignment.return', 'assignment.view_all',
   'repair.create', 'repair.view', 'repair.update',
   'warranty.manage',
   'disposal.create', 'disposal.view',
@@ -100,9 +100,17 @@ async function run() {
   );
 
   // hr เห็นได้เฉพาะหน้าที่เกี่ยวกับข้อมูลพนักงาน/ทรัพย์สินที่เกี่ยวข้อง — ไม่แตะ PO/สต๊อก/ซ่อมบำรุง/จำหน่ายทิ้ง/RBAC
-  // มี requisition.create เพื่อเบิก/ยืมแทนพนักงานใหม่ได้ (ผ่าน onBehalfOfEmployeeId — ดู CreateRequisitionDto)
-  // และต้องมี requisition.view_all คู่กันเสมอ เพราะเป็น permission ที่ gate สิทธิ์เบิกแทนคนอื่นด้วย
-  const hrCodes = ['dashboard.view', 'employee.view_all', 'asset.view', 'requisition.view_all', 'requisition.create'];
+  // มี requisition.create_on_behalf เพื่อเบิก/ยืมให้พนักงานคนอื่น/พนักงานใหม่ได้ (ดู CreateRequisitionDto) — role employee
+  // ไม่มีสิทธิ์นี้ จึงเบิกได้แค่ให้ตัวเอง; it_admin ได้ทุก permission อยู่แล้วด้านบน
+  const hrCodes = [
+    'dashboard.view',
+    'employee.view_all',
+    'asset.view',
+    'requisition.view_all',
+    'requisition.create',
+    'requisition.create_on_behalf',
+    'assignment.view_all',
+  ];
   const hrPermissions = permissionEntities.filter((p) => hrCodes.includes(p.permissionCode));
   await rolePermissionRepo.delete({ roleId: hrRole.roleId });
   await rolePermissionRepo.save(

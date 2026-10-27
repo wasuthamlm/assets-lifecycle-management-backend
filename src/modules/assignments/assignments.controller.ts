@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AssignmentsService } from './assignments.service';
 import { IssueAssetDto } from './dto/issue-asset.dto';
 import { ReturnAssetDto } from './dto/return-asset.dto';
+import { QueryAssignmentDto } from './dto/query-assignment.dto';
 import { RequirePermissions } from '@common/decorators/permissions.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { requireEmployeeId } from '@common/utils/require-employee-id.util';
@@ -34,6 +35,13 @@ export class AssignmentsController {
   @RequirePermissions('asset.view')
   findMine(@CurrentUser() user: CurrentUserPayload) {
     return this.service.findMine(requireEmployeeId(user));
+  }
+
+  // ต้องประกาศก่อน @Get(':id') ไม่งั้น 'history' จะถูกจับเป็น :id แล้วโดน ParseIntPipe ปฏิเสธ
+  @Get('history')
+  @RequirePermissions('assignment.view_all')
+  findAll(@Query() query: QueryAssignmentDto) {
+    return this.service.findAll(query);
   }
 
   @Get()

@@ -15,6 +15,12 @@ export class AssetCategory {
   })
   assetType: string;
 
+  @Column({
+    default: false,
+    comment: 'true = พนักงานทั่วไปเบิก/ยืมเองไม่ได้ ต้องให้ HR (requisition.view_all) ทำรายการให้ เช่น notebook / tablet',
+  })
+  requiresHrRequest: boolean;
+
   @Column({ name: 'parent_category_id', nullable: true })
   parentCategoryId: number;
 

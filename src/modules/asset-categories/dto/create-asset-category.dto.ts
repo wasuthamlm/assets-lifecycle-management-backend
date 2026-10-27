@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateAssetCategoryDto {
   @ApiProperty()
@@ -15,4 +15,9 @@ export class CreateAssetCategoryDto {
   @IsOptional()
   @IsInt()
   parentCategoryId?: number;
+
+  @ApiPropertyOptional({ description: 'true = ต้องให้ HR เป็นผู้ทำรายการเบิก/ยืมให้ (พนักงานทั่วไปเลือกเองไม่ได้)' })
+  @IsOptional()
+  @IsBoolean()
+  requiresHrRequest?: boolean;
 }

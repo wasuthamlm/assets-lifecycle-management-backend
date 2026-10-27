@@ -45,7 +45,8 @@ function itemRow(item: RequisitionItem, seq: number): string {
  * เทียบ layout กับฟอร์มกระดาษต้นฉบับได้ตรงๆ ก่อน ถ้าต้องการไฟล์ PDF ให้แปลงเพิ่มเป็นขั้นถัดไป
  */
 export function renderRequisitionDocumentHtml(r: Requisition): string {
-  const employee = r.requestedByEmployee;
+  // เอกสารส่งมอบเป็นของผู้รับทรัพย์สิน — HR เบิกให้คนอื่นจะใช้ข้อมูลผู้รับ ไม่ใช่ HR
+  const employee = r.requestedForEmployee ?? r.requestedByEmployee;
   const companyName = employee?.department?.company?.companyName ?? 'บริษัท มิลลิเมด จำกัด';
   const info = r.documentInfo;
   const accessories = info?.accessories;

@@ -12,6 +12,7 @@ describe('AuthService', () => {
   const supabaseIdentity = { verifyAccessToken: jest.fn() } as any;
   const notificationsService = { notify: jest.fn().mockResolvedValue(null) } as any;
   const departmentsRepo = {} as any;
+  const rolePreassignments = { consumeForEmployee: jest.fn().mockResolvedValue([]) } as any;
 
   describe('login', () => {
     it('returns mustChangePassword=true for a user still on a temporary password', async () => {
@@ -29,6 +30,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       const result = await service.login({ username: 'admin', password: 'Admin@12345' });
@@ -50,6 +52,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await expect(service.login({ username: 'admin', password: 'wrong' })).rejects.toThrow(UnauthorizedException);
@@ -72,6 +75,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await expect(
@@ -97,6 +101,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await service.changePassword(1, { currentPassword: 'Admin@12345', newPassword: 'NewStrongP@ss1' });
@@ -121,6 +126,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       const result = await service.forgotPassword({ email: 'nobody@example.com' });
@@ -146,6 +152,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await service.forgotPassword({ email: 'admin@example.com' });
@@ -169,6 +176,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
     it('rejects identities not verified as coming from the azure provider', async () => {
@@ -339,6 +347,77 @@ describe('AuthService', () => {
       // usersRepo.save ยังถูกเรียกจาก issueTokens() เพื่อบันทึก refreshTokenHash อยู่ดี แต่ fullName เดิมต้องไม่ถูกเขียนทับ
       expect(usersRepo.save).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'ชื่อเดิม' }));
     });
+
+    it('applies pre-assigned roles when auto-linking a matching employee on first login', async () => {
+      supabaseIdentity.verifyAccessToken.mockResolvedValue({
+        supabaseUserId: 'uuid-9',
+        email: 'Pre.Assigned@millimedthailand.com',
+        provider: 'azure',
+      });
+      employeesRepo.findOne.mockResolvedValueOnce({ employeeId: 50 });
+      const created = { userId: 20, isActive: true, mustChangePassword: false, employeeId: 50 };
+      const usersRepo = {
+        findOne: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(null),
+        create: jest.fn().mockReturnValue(created),
+        save: jest.fn().mockResolvedValue(created),
+      } as any;
+      const localPreassignments = { consumeForEmployee: jest.fn().mockResolvedValue([3]) } as any;
+      const service = new AuthService(
+        usersRepo,
+        employeesRepo,
+        jwtService,
+        config,
+        jwtStrategy,
+        mailService,
+        allowedDomainsService,
+        supabaseIdentity,
+        notificationsService,
+        departmentsRepo,
+        localPreassignments,
+      );
+
+      await service.loginWithSso({ accessToken: 'tok' });
+
+      // อีเมลจาก Azure ถูก lowercase ก่อนใช้เทียบเสมอ
+      expect(localPreassignments.consumeForEmployee).toHaveBeenCalledWith('pre.assigned@millimedthailand.com', 50);
+      expect(jwtStrategy.invalidate).toHaveBeenCalledWith(20);
+    });
+
+    it('links an existing SSO user that has no employee yet once a matching employee appears', async () => {
+      supabaseIdentity.verifyAccessToken.mockResolvedValue({
+        supabaseUserId: 'uuid-10',
+        email: 'late.link@millimedthailand.com',
+        provider: 'azure',
+      });
+      employeesRepo.findOne.mockResolvedValueOnce({ employeeId: 60 });
+      const existingUser = { userId: 21, isActive: true, mustChangePassword: false, employeeId: null };
+      const usersRepo = {
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce(existingUser) // by supabaseUserId
+          .mockResolvedValueOnce(null), // employee 60 not owned by another user
+        save: jest.fn().mockImplementation((u) => Promise.resolve(u)),
+      } as any;
+      const localPreassignments = { consumeForEmployee: jest.fn().mockResolvedValue([]) } as any;
+      const service = new AuthService(
+        usersRepo,
+        employeesRepo,
+        jwtService,
+        config,
+        jwtStrategy,
+        mailService,
+        allowedDomainsService,
+        supabaseIdentity,
+        notificationsService,
+        departmentsRepo,
+        localPreassignments,
+      );
+
+      await service.loginWithSso({ accessToken: 'tok' });
+
+      expect(usersRepo.save).toHaveBeenCalledWith(expect.objectContaining({ userId: 21, employeeId: 60 }));
+      expect(localPreassignments.consumeForEmployee).toHaveBeenCalledWith('late.link@millimedthailand.com', 60);
+    });
   });
 
   describe('completeEmployeeProfile', () => {
@@ -355,6 +434,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await expect(
@@ -376,6 +456,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await expect(
@@ -414,6 +495,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         localNotificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       const result = await service.completeEmployeeProfile(1, {
@@ -447,6 +529,43 @@ describe('AuthService', () => {
       );
     });
 
+    it('applies pre-assigned roles and skips the "please assign roles" admin notification', async () => {
+      const user = { userId: 1, employeeId: null, email: 'preassigned@millimedthailand.com' };
+      const usersRepo = {
+        findOne: jest.fn().mockResolvedValue(user),
+        save: jest.fn().mockImplementation((u) => Promise.resolve(u)),
+      } as any;
+      const createdEmployee = { employeeId: 45, employeeCode: 'EMP-0005', fullName: 'มีสิทธิ์ ล่วงหน้า' };
+      const localEmployeesRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockReturnValue(createdEmployee),
+        save: jest.fn().mockResolvedValue(createdEmployee),
+        createQueryBuilder: jest.fn(),
+      } as any;
+      const localNotificationsService = { notify: jest.fn() } as any;
+      const localPreassignments = { consumeForEmployee: jest.fn().mockResolvedValue([2, 4]) } as any;
+      const service = new AuthService(
+        usersRepo,
+        localEmployeesRepo,
+        jwtService,
+        config,
+        jwtStrategy,
+        mailService,
+        allowedDomainsService,
+        supabaseIdentity,
+        localNotificationsService,
+        departmentsRepo,
+        localPreassignments,
+      );
+
+      const result = await service.completeEmployeeProfile(1, { employeeCode: 'EMP-0005', fullName: 'มีสิทธิ์ ล่วงหน้า' });
+
+      expect(result).toEqual({ success: true });
+      expect(localPreassignments.consumeForEmployee).toHaveBeenCalledWith('preassigned@millimedthailand.com', 45);
+      expect(localEmployeesRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(localNotificationsService.notify).not.toHaveBeenCalled();
+    });
+
     it('does not fail the request when notifying admins throws', async () => {
       const user = { userId: 1, employeeId: null, email: 'new.person2@millimedthailand.com' };
       const usersRepo = {
@@ -474,6 +593,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         localNotificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       const result = await service.completeEmployeeProfile(1, {
@@ -522,6 +642,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         localDepartmentsRepo,
+        rolePreassignments,
       );
 
       await service.completeEmployeeProfile(1, {
@@ -571,6 +692,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         localDepartmentsRepo,
+        rolePreassignments,
       );
 
       await service.completeEmployeeProfile(1, {
@@ -598,6 +720,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await expect(service.resetPassword({ token: 'bad', newPassword: 'NewStrongP@ss1' })).rejects.toThrow(
@@ -629,6 +752,7 @@ describe('AuthService', () => {
         supabaseIdentity,
         notificationsService,
         departmentsRepo,
+        rolePreassignments,
       );
 
       await service.resetPassword({ token: 'valid-raw-token', newPassword: 'NewStrongP@ss1' });
@@ -640,5 +764,75 @@ describe('AuthService', () => {
       expect(user.refreshTokenHash).toBeNull();
       expect(jwtStrategy.invalidate).toHaveBeenCalledWith(1);
     });
+  });
+});
+
+describe('AuthService#completeEmployeeProfile (claiming an employee HR created before the email existed)', () => {
+  const hrCreated = () => ({ employeeId: 77, employeeCode: 'EMP-0099', fullName: 'พนักงาน  ใหม่', email: null, position: 'Engineer', departmentId: 3, phone: null });
+
+  function build(employee: any, owner: any = null) {
+    const user = { userId: 1, employeeId: null, email: 'new.hire@millimedthailand.com' };
+    const usersRepo = {
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(user) // current user
+        .mockResolvedValueOnce(owner), // who already owns employee 77
+      save: jest.fn().mockImplementation((u) => Promise.resolve(u)),
+    } as any;
+    const employeesRepo = {
+      findOne: jest.fn().mockResolvedValue(employee),
+      save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
+      create: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([{ employeeId: 7 }]),
+      }),
+    } as any;
+    const notificationsService = { notify: jest.fn().mockResolvedValue(null) } as any;
+    const rolePreassignments = { consumeForEmployee: jest.fn().mockResolvedValue([]) } as any;
+    const service = new AuthService(
+      usersRepo,
+      employeesRepo,
+      { signAsync: jest.fn() } as any,
+      { get: jest.fn() } as any,
+      { invalidate: jest.fn() } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      notificationsService,
+      {} as any,
+      rolePreassignments,
+    );
+    return { service, usersRepo, employeesRepo, notificationsService };
+  }
+
+  it('links to the existing employee (no duplicate) when code + name match and nobody owns it', async () => {
+    const { service, usersRepo, employeesRepo, notificationsService } = build(hrCreated());
+
+    const result = await service.completeEmployeeProfile(1, { employeeCode: 'EMP-0099', fullName: 'พนักงาน ใหม่', phone: '0811111111' });
+
+    expect(result).toEqual({ success: true });
+    expect(employeesRepo.create).not.toHaveBeenCalled();
+    expect(employeesRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ employeeId: 77, email: 'new.hire@millimedthailand.com', phone: '0811111111', position: 'Engineer' }),
+    );
+    expect(usersRepo.save).toHaveBeenCalledWith(expect.objectContaining({ employeeId: 77 }));
+    expect(notificationsService.notify).toHaveBeenCalledWith(7, 'employee_profile_completed', expect.any(String), expect.stringContaining('HR'), 'employee', 77);
+  });
+
+  it('rejects when the name does not match what HR entered', async () => {
+    const { service } = build(hrCreated());
+    await expect(service.completeEmployeeProfile(1, { employeeCode: 'EMP-0099', fullName: 'คนอื่น' })).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects when another account already owns that employee', async () => {
+    const { service } = build(hrCreated(), { userId: 2, employeeId: 77 });
+    await expect(service.completeEmployeeProfile(1, { employeeCode: 'EMP-0099', fullName: 'พนักงาน ใหม่' })).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects when HR recorded a different email for that employee', async () => {
+    const { service } = build({ ...hrCreated(), email: 'someone.else@millimedthailand.com' });
+    await expect(service.completeEmployeeProfile(1, { employeeCode: 'EMP-0099', fullName: 'พนักงาน ใหม่' })).rejects.toThrow(ConflictException);
   });
 });
