@@ -27,7 +27,11 @@ export class RepairsController {
   findOne(@Param('id', ParseIntPipe) id: number) { return this.service.findOne(id); }
 
   @Patch(':id/status') @RequirePermissions('repair.update')
-  updateStatus(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateRepairStatusDto) {
-    return this.service.updateStatus(id, dto);
+  updateStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateRepairStatusDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.updateStatus(id, dto, requireEmployeeId(user));
   }
 }

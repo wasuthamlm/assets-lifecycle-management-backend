@@ -12,7 +12,7 @@ describe('RepairsService#findAll (search/filter/pagination)', () => {
       getManyAndCount: jest.fn().mockResolvedValue([rows, total]),
     };
     const repo = { createQueryBuilder: jest.fn().mockReturnValue(qb) } as any;
-    const service = new RepairsService(repo, {} as any, {} as any, {} as any);
+    const service = new RepairsService(repo, {} as any, {} as any, {} as any, {} as any);
     return { service, qb };
   }
 

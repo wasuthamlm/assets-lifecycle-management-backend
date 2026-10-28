@@ -6,8 +6,9 @@ import { Asset } from '../assets/entities/asset.entity';
 import { CreateRepairDto } from './dto/create-repair.dto';
 import { UpdateRepairStatusDto } from './dto/update-repair-status.dto';
 import { QueryRepairDto } from './dto/query-repair.dto';
-import { AssetStatus, MovementType, RepairResult, RepairStatus } from '@common/enums';
+import { AssetStatus, MovementType, NotificationType, RepairResult, RepairStatus } from '@common/enums';
 import { MovementsService } from '../movements/movements.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { assertAssetStatus } from '@common/utils/assert-asset-status.util';
 
 /**
@@ -23,17 +24,32 @@ const REPAIR_STATUS_TRANSITIONS: Record<RepairStatus, RepairStatus[]> = {
   [RepairStatus.CLOSED]: [],
 };
 
+// ข้อความแจ้งเตือนถึงผู้แจ้งซ่อม — ภาษาเดียวกับ REPAIR_STATUS_LABEL / REPAIR_RESULT_LABEL ฝั่ง frontend
+const REPAIR_STATUS_LABEL: Record<RepairStatus, string> = {
+  [RepairStatus.REPORTED]: 'แจ้งซ่อม',
+  [RepairStatus.REPAIRING]: 'กำลังซ่อม',
+  [RepairStatus.SENT_TO_VENDOR]: 'ส่งซ่อมภายนอก',
+  [RepairStatus.REPAIRED]: 'ซ่อมเสร็จแล้ว',
+  [RepairStatus.CLOSED]: 'ปิดงาน',
+};
+const REPAIR_RESULT_LABEL: Record<RepairResult, string> = {
+  [RepairResult.FIXED]: 'ซ่อมสำเร็จ',
+  [RepairResult.UNREPAIRABLE]: 'ซ่อมไม่ได้',
+  [RepairResult.WAITING_PARTS]: 'รออะไหล่',
+};
+
 @Injectable()
 export class RepairsService {
   constructor(
     @InjectRepository(Repair) private repo: Repository<Repair>,
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     private movementsService: MovementsService,
+    private notifications: NotificationsService,
     private dataSource: DataSource,
   ) {}
 
   async create(dto: CreateRepairDto, reportedBy: number) {
-    return this.dataSource.transaction(async (manager) => {
+    const { repair, asset } = await this.dataSource.transaction(async (manager) => {
       const asset = await manager.findOne(Asset, {
         where: { assetId: dto.assetId },
         lock: { mode: 'pessimistic_write' },
@@ -60,8 +76,21 @@ export class RepairsService {
         manager,
       );
 
-      return repair;
+      return { repair, asset };
     });
+
+    // นอก transaction เสมอ (เหมือน requisitions) — แจ้งทุกคนที่จัดการงานซ่อมได้ ยกเว้นคนที่แจ้งเอง
+    await this.notifications.notifyByPermission(
+      'repair.update',
+      NotificationType.REPAIR_REPORTED,
+      'มีการแจ้งซ่อมใหม่',
+      `ทรัพย์สิน ${asset.assetNo} (${asset.assetName}) ถูกแจ้งซ่อม: ${dto.problemDescription}`,
+      'repair',
+      repair.repairId,
+      { exclude: [reportedBy] },
+    );
+
+    return repair;
   }
 
   /**
@@ -91,10 +120,12 @@ export class RepairsService {
     return r;
   }
 
-  async updateStatus(id: number, dto: UpdateRepairStatusDto) {
-    return this.dataSource.transaction(async (manager) => {
+  async updateStatus(id: number, dto: UpdateRepairStatusDto, updatedBy: number) {
+    let statusChanged = false;
+    const repair = await this.dataSource.transaction(async (manager) => {
       const repair = await manager.findOne(Repair, { where: { repairId: id }, lock: { mode: 'pessimistic_write' } });
       if (!repair) throw new NotFoundException(`ไม่พบงานซ่อม id ${id}`);
+      statusChanged = dto.status !== repair.status;
 
       if (dto.status !== repair.status) {
         const allowed = REPAIR_STATUS_TRANSITIONS[repair.status] || [];
@@ -139,5 +170,21 @@ export class RepairsService {
 
       return repair;
     });
+
+    // แจ้งผู้แจ้งซ่อมเฉพาะตอนสถานะเปลี่ยนจริง (แก้แค่ค่าซ่อม/หมายเหตุไม่ต้องแจ้ง) และไม่แจ้งถ้าเป็นคนอัปเดตเอง
+    if (statusChanged && repair.reportedBy !== updatedBy) {
+      const asset = await this.assetRepo.findOne({ where: { assetId: repair.assetId } });
+      const resultText = repair.result ? ` — ผล: ${REPAIR_RESULT_LABEL[repair.result]}` : '';
+      await this.notifications.notify(
+        repair.reportedBy,
+        NotificationType.REPAIR_STATUS_UPDATED,
+        `งานซ่อม: ${REPAIR_STATUS_LABEL[repair.status]}`,
+        `ทรัพย์สิน ${asset?.assetNo ?? repair.assetId} ที่คุณแจ้งซ่อม เปลี่ยนสถานะเป็น "${REPAIR_STATUS_LABEL[repair.status]}"${resultText}`,
+        'repair',
+        repair.repairId,
+      );
+    }
+
+    return repair;
   }
 }

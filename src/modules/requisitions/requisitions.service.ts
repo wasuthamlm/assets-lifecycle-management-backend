@@ -569,6 +569,8 @@ export class RequisitionsService {
             dueDate: requisition.dueDate ? new Date(requisition.dueDate).toISOString().slice(0, 10) : undefined,
           },
           issuedBy,
+          // onFullyApproved/approve() แจ้งผู้ขอ/ผู้รับไปแล้ว — ไม่ต้องแจ้ง "ได้รับทรัพย์สิน" ซ้ำอีกรอบ
+          { notifyHolder: false },
         );
       } catch (err) {
         this.logger.warn(

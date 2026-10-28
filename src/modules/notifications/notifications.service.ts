@@ -68,6 +68,91 @@ export class NotificationsService {
     }
   }
 
+  /** employee_id ทุกคนที่มี role ชื่อนี้ (เช่น 'it_admin') */
+  async findEmployeeIdsByRole(roleName: string): Promise<number[]> {
+    const rows = await this.employeeRepo
+      .createQueryBuilder('e')
+      .innerJoin('e.employeeRoles', 'er')
+      .innerJoin('er.role', 'r')
+      .where('r.roleName = :roleName', { roleName })
+      .select('e.employeeId', 'employeeId')
+      .distinct(true)
+      .getRawMany<{ employeeId: number }>();
+    return rows.map((r) => Number(r.employeeId));
+  }
+
+  /**
+   * employee_id ทุกคนที่มี permission นี้ผ่าน role ใดก็ได้ — ใช้แทนการผูกกับชื่อ role ตรงๆ
+   * ให้ role ใหม่ที่ได้สิทธิ์นี้ (เช่น ช่างซ่อม/HR) ได้รับแจ้งเตือนอัตโนมัติโดยไม่ต้องแก้โค้ด
+   */
+  async findEmployeeIdsByPermission(permissionCode: string): Promise<number[]> {
+    const rows = await this.employeeRepo
+      .createQueryBuilder('e')
+      .innerJoin('e.employeeRoles', 'er')
+      .innerJoin('er.role', 'r')
+      .innerJoin('r.rolePermissions', 'rp')
+      .innerJoin('rp.permission', 'p')
+      .where('p.permissionCode = :permissionCode', { permissionCode })
+      .select('e.employeeId', 'employeeId')
+      .distinct(true)
+      .getRawMany<{ employeeId: number }>();
+    return rows.map((r) => Number(r.employeeId));
+  }
+
+  /**
+   * ส่งแจ้งเตือนเดียวกันให้หลายคน (ตัด id ซ้ำ + คนที่อยู่ใน exclude เช่นผู้ทำรายการเอง) — best-effort
+   * เหมือน notify(): ห้าม throw กลับไปหา caller เพราะ business operation หลัก commit ไปแล้ว
+   */
+  async notifyMany(
+    recipientEmployeeIds: number[],
+    type: NotificationType,
+    title: string,
+    message: string,
+    referenceType?: string,
+    referenceId?: number,
+    options?: { exclude?: number[] },
+  ): Promise<void> {
+    const exclude = new Set(options?.exclude ?? []);
+    const recipients = [...new Set(recipientEmployeeIds)].filter((id) => !exclude.has(id));
+    await Promise.all(recipients.map((id) => this.notify(id, type, title, message, referenceType, referenceId)));
+  }
+
+  /** แจ้งทุกคนที่มี permission นี้ — รวม lookup ไว้ใน try เดียวกัน ให้ best-effort ทั้งก้อน */
+  async notifyByPermission(
+    permissionCode: string,
+    type: NotificationType,
+    title: string,
+    message: string,
+    referenceType?: string,
+    referenceId?: number,
+    options?: { exclude?: number[] },
+  ): Promise<void> {
+    try {
+      const ids = await this.findEmployeeIdsByPermission(permissionCode);
+      await this.notifyMany(ids, type, title, message, referenceType, referenceId, options);
+    } catch (err) {
+      this.logger.warn(`แจ้งเตือนผู้มีสิทธิ์ ${permissionCode} ไม่สำเร็จ (type=${type}): ${(err as Error).message}`);
+    }
+  }
+
+  /** แจ้งทุกคนที่มี role นี้ — best-effort เหมือน notifyByPermission */
+  async notifyByRole(
+    roleName: string,
+    type: NotificationType,
+    title: string,
+    message: string,
+    referenceType?: string,
+    referenceId?: number,
+    options?: { exclude?: number[] },
+  ): Promise<void> {
+    try {
+      const ids = await this.findEmployeeIdsByRole(roleName);
+      await this.notifyMany(ids, type, title, message, referenceType, referenceId, options);
+    } catch (err) {
+      this.logger.warn(`แจ้งเตือน role ${roleName} ไม่สำเร็จ (type=${type}): ${(err as Error).message}`);
+    }
+  }
+
   // ซ่อนการแจ้งเตือนที่ถูก "เคลียร์" ทิ้ง (dismissedAt) และที่เก่าเกิน 7 วันออกจากรายการที่เห็น —
   // ไม่ลบแถวจริงออกจาก DB เก็บไว้เป็นประวัติเสมอ (ดูคอมเมนต์ที่ Notification.dismissedAt)
   findMine(employeeId: number, unreadOnly = false) {

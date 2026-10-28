@@ -11,10 +11,31 @@ import { Vendor } from '../vendors/entities/vendor.entity';
 import { IssueAssetDto } from './dto/issue-asset.dto';
 import { ReturnAssetDto } from './dto/return-asset.dto';
 import { QueryAssignmentDto } from './dto/query-assignment.dto';
-import { ApprovalStatus, AssetStatus, HolderType, MovementType, ReturnCondition } from '@common/enums';
+import {
+  ApprovalStatus,
+  AssetStatus,
+  AssignmentType,
+  HolderType,
+  MovementType,
+  NotificationType,
+  ReturnCondition,
+} from '@common/enums';
 import { MovementsService } from '../movements/movements.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { assertAssetStatus } from '@common/utils/assert-asset-status.util';
 import { isPastDueDateThai } from '@common/utils/thai-date.util';
+
+// ข้อความแจ้งเตือนถึงผู้ถือครอง — ภาษาเดียวกับ ASSIGNMENT_TYPE_LABEL / RETURN_CONDITION_LABEL ฝั่ง frontend
+const ASSIGNMENT_TYPE_LABEL: Record<AssignmentType, string> = {
+  [AssignmentType.PERMANENT]: 'เบิกใช้ประจำ',
+  [AssignmentType.TEMPORARY_LOAN]: 'ยืม',
+  [AssignmentType.REPLACEMENT]: 'เครื่องทดแทน',
+};
+const RETURN_CONDITION_LABEL: Record<ReturnCondition, string> = {
+  [ReturnCondition.NORMAL]: 'ปกติ',
+  [ReturnCondition.DAMAGED]: 'ชำรุด',
+  [ReturnCondition.LOST]: 'สูญหาย',
+};
 
 /**
  * assignment = สถานะ "การถือครองปัจจุบัน" ของ asset หนึ่งชิ้น (มี due date/condition ตอนคืน)
@@ -32,6 +53,7 @@ export class AssignmentsService {
     @InjectRepository(Location) private locationRepo: Repository<Location>,
     @InjectRepository(Vendor) private vendorRepo: Repository<Vendor>,
     private movementsService: MovementsService,
+    private notifications: NotificationsService,
     private dataSource: DataSource,
   ) {}
 
@@ -60,8 +82,12 @@ export class AssignmentsService {
     );
   }
 
-  async issue(dto: IssueAssetDto, issuedBy: number) {
-    return this.dataSource.transaction(async (manager) => {
+  /**
+   * options.notifyHolder=false สำหรับการจ่ายอัตโนมัติหลังอนุมัติใบขอ (RequisitionsService.autoIssueApprovedItems)
+   * เพราะฝั่งนั้นแจ้งผู้ขอ/ผู้รับไปแล้ว — ไม่งั้นผู้รับได้แจ้งเตือนซ้ำ 2 อันจากเหตุการณ์เดียว
+   */
+  async issue(dto: IssueAssetDto, issuedBy: number, options?: { notifyHolder?: boolean }) {
+    const { assignment, asset } = await this.dataSource.transaction(async (manager) => {
       // pessimistic_write ล็อกแถว asset ตลอด transaction กัน 2 คำขอ issue asset เดียวกันพร้อมกัน
       // (เดิมเช็ค currentStatus ก่อนเปิด transaction แบบ read-then-write ทำให้ 2 request ที่มาพร้อมกัน
       // อ่านเห็น IN_STOCK เหมือนกันทั้งคู่แล้ว commit ผ่านทั้งคู่ — asset ถูกจ่ายให้ 2 คนซ้อนกันได้)
@@ -127,12 +153,27 @@ export class AssignmentsService {
         manager,
       );
 
-      return assignment;
+      return { assignment, asset };
     });
+
+    // แจ้งเฉพาะผู้ถือที่เป็นพนักงาน (แผนก/สถานที่/ผู้ขายไม่มีกล่องแจ้งเตือน) และไม่แจ้งถ้าจ่ายให้ตัวเอง
+    if ((options?.notifyHolder ?? true) && assignment.holderType === HolderType.EMPLOYEE && assignment.holderId !== issuedBy) {
+      const dueText = dto.dueDate ? ` กำหนดคืน ${dto.dueDate}` : '';
+      await this.notifications.notify(
+        assignment.holderId,
+        NotificationType.ASSIGNMENT_ISSUED,
+        'คุณได้รับทรัพย์สิน',
+        `${ASSIGNMENT_TYPE_LABEL[assignment.assignmentType]}: ${asset.assetNo} (${asset.assetName})${dueText}`,
+        'assignment',
+        assignment.assignmentId,
+      );
+    }
+
+    return assignment;
   }
 
   async return_(assignmentId: number, dto: ReturnAssetDto, receivedBy: number) {
-    return this.dataSource.transaction(async (manager) => {
+    const { assignment, asset } = await this.dataSource.transaction(async (manager) => {
       // ล็อก assignment ก่อนเช็ค returnedDate กัน 2 คำขอคืนพร้อมกันผ่าน check ทั้งคู่ (double-return)
       const assignment = await manager.findOne(Assignment, {
         where: { assignmentId },
@@ -180,12 +221,32 @@ export class AssignmentsService {
         manager,
       );
 
-      return assignment;
+      return { assignment, asset };
     });
+
+    // ใบรับคืนถึงผู้ถือเดิม — เป็นหลักฐานว่าระบบบันทึกคืนแล้ว และสภาพที่ IT ลงไว้ตรงกับที่ส่งคืนจริง
+    if (assignment.holderType === HolderType.EMPLOYEE && assignment.holderId !== receivedBy) {
+      const lateText = assignment.isLateReturn ? ' (คืนล่าช้ากว่ากำหนด)' : '';
+      await this.notifications.notify(
+        assignment.holderId,
+        NotificationType.ASSIGNMENT_RETURNED,
+        'บันทึกรับคืนทรัพย์สินแล้ว',
+        `${asset.assetNo} (${asset.assetName}) — สภาพ: ${RETURN_CONDITION_LABEL[dto.returnCondition]}${lateText}`,
+        'assignment',
+        assignment.assignmentId,
+      );
+    }
+
+    return assignment;
   }
 
   async findByAsset(assetId: number) {
-    const assignments = await this.repo.find({ where: { assetId }, order: { issuedDate: 'DESC' } });
+    // assignmentId DESC เป็นตัวตัดสินเมื่อ issuedDate ซ้ำกัน — หน้า AssetDetailPage ใช้ตัวแรกเป็น "ผู้ถือครองล่าสุด"
+    const assignments = await this.repo.find({
+      where: { assetId },
+      relations: ['issuedByEmployee'],
+      order: { issuedDate: 'DESC', assignmentId: 'DESC' },
+    });
     return this.attachHolders(assignments);
   }
 

@@ -98,4 +98,8 @@ export enum NotificationType {
   ASSIGNMENT_OVERDUE = 'assignment_overdue',
   EMPLOYEE_PROFILE_COMPLETED = 'employee_profile_completed',
   PERMISSIONS_UPDATED = 'permissions_updated',
+  REPAIR_REPORTED = 'repair_reported',
+  REPAIR_STATUS_UPDATED = 'repair_status_updated',
+  ASSIGNMENT_ISSUED = 'assignment_issued',
+  ASSIGNMENT_RETURNED = 'assignment_returned',
 }

@@ -10,11 +10,13 @@ import { Vendor } from '../vendors/entities/vendor.entity';
 import { AssignmentsService } from './assignments.service';
 import { AssignmentsController } from './assignments.controller';
 import { MovementsModule } from '../movements/movements.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Assignment, Asset, Requisition, Employee, Department, Location, Vendor]),
     MovementsModule,
+    NotificationsModule,
   ],
   controllers: [AssignmentsController],
   providers: [AssignmentsService],

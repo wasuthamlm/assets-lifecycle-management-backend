@@ -5,9 +5,10 @@ import { Asset } from '../assets/entities/asset.entity';
 import { RepairsService } from './repairs.service';
 import { RepairsController } from './repairs.controller';
 import { MovementsModule } from '../movements/movements.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Repair, Asset]), MovementsModule],
+  imports: [TypeOrmModule.forFeature([Repair, Asset]), MovementsModule, NotificationsModule],
   controllers: [RepairsController],
   providers: [RepairsService],
   exports: [RepairsService, TypeOrmModule],

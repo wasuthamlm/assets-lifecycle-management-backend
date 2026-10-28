@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AssignmentsService } from './assignments.service';
 import { Assignment } from './entities/assignment.entity';
 import { Asset } from '../assets/entities/asset.entity';
-import { AssetStatus, ReturnCondition } from '@common/enums';
+import { AssetStatus, HolderType, NotificationType, ReturnCondition } from '@common/enums';
 
 describe('AssignmentsService#return_ (late-return flag)', () => {
   function buildService(assignment: any, asset: any = { assetId: 1, currentStatus: AssetStatus.ASSIGNED }) {
@@ -15,6 +15,7 @@ describe('AssignmentsService#return_ (late-return flag)', () => {
     const manager = { findOne: managerFindOne, save: managerSave } as any;
     const dataSource = { transaction: jest.fn().mockImplementation((cb: any) => cb(manager)) } as any;
     const movementsService = { log: jest.fn().mockResolvedValue(undefined) } as any;
+    const notifications = { notify: jest.fn().mockResolvedValue(null) } as any;
     const service = new AssignmentsService(
       {} as any,
       {} as any,
@@ -24,9 +25,10 @@ describe('AssignmentsService#return_ (late-return flag)', () => {
       {} as any,
       {} as any,
       movementsService,
+      notifications,
       dataSource,
     );
-    return { service, manager, movementsService };
+    return { service, manager, movementsService, notifications };
   }
 
   it('marks isLateReturn=true when returned after dueDate', async () => {
@@ -82,5 +84,30 @@ describe('AssignmentsService#return_ (late-return flag)', () => {
     await expect(service.return_(1, { returnCondition: ReturnCondition.NORMAL } as any, 99)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  it('notifies the employee holder that the return was recorded', async () => {
+    const assignment = { assignmentId: 7, assetId: 1, holderType: HolderType.EMPLOYEE, holderId: 42, dueDate: null, returnedDate: null };
+    const { service, notifications } = buildService(assignment, { assetId: 1, assetNo: 'A-001', assetName: 'Laptop' });
+
+    await service.return_(7, { returnCondition: ReturnCondition.NORMAL }, 99);
+
+    expect(notifications.notify).toHaveBeenCalledWith(
+      42,
+      NotificationType.ASSIGNMENT_RETURNED,
+      expect.any(String),
+      expect.stringContaining('A-001'),
+      'assignment',
+      7,
+    );
+  });
+
+  it('does not notify when the holder recorded their own return', async () => {
+    const assignment = { assignmentId: 7, assetId: 1, holderType: HolderType.EMPLOYEE, holderId: 42, dueDate: null, returnedDate: null };
+    const { service, notifications } = buildService(assignment);
+
+    await service.return_(7, { returnCondition: ReturnCondition.NORMAL }, 42);
+
+    expect(notifications.notify).not.toHaveBeenCalled();
   });
 });

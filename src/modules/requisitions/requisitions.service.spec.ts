@@ -517,6 +517,7 @@ describe('RequisitionsService#approve (concurrency-safe)', () => {
         holderId: 10,
       }),
       5,
+      { notifyHolder: false },
     );
   });
 
@@ -536,7 +537,7 @@ describe('RequisitionsService#approve (concurrency-safe)', () => {
 
     await service.approve(1, { status: ApprovalStatus.APPROVED } as any, 5);
 
-    expect(assignments.issue).toHaveBeenCalledWith(expect.objectContaining({ assetId: 42, holderId: 77 }), 5);
+    expect(assignments.issue).toHaveBeenCalledWith(expect.objectContaining({ assetId: 42, holderId: 77 }), 5, { notifyHolder: false });
     expect(notifications.notify).toHaveBeenCalledWith(77, NotificationType.REQUISITION_APPROVED, expect.any(String), expect.any(String), 'requisition', 1);
   });
 
@@ -775,7 +776,7 @@ describe('RequisitionsService#create (approver = it_admin)', () => {
     expect(approvalArgs()).toHaveLength(1);
     expect(approvalArg()).toEqual(expect.objectContaining({ approverId: 10, status: ApprovalStatus.APPROVED, actionedAt: expect.any(Date) }));
     expect(requisitionArg().overallStatus).toBe(ApprovalStatus.APPROVED);
-    expect(assignments.issue).toHaveBeenCalledWith(expect.objectContaining({ assetId: 1, holderId: 10 }), 10);
+    expect(assignments.issue).toHaveBeenCalledWith(expect.objectContaining({ assetId: 1, holderId: 10 }), 10, { notifyHolder: false });
     expect(notifications.notify).not.toHaveBeenCalledWith(expect.anything(), NotificationType.REQUISITION_PENDING_APPROVAL, expect.anything(), expect.anything(), expect.anything(), expect.anything());
   });
 
