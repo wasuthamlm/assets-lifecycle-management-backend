@@ -5,6 +5,7 @@ describe('RepairsService#findAll (search/filter/pagination)', () => {
   function buildService(rows: any[] = [], total = 0) {
     const qb: any = {
       leftJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndMapOne: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
@@ -20,6 +21,12 @@ describe('RepairsService#findAll (search/filter/pagination)', () => {
     const { service } = buildService([{ repairId: 1 }], 1);
     const result = await service.findAll({ page: 1, limit: 20 });
     expect(result).toEqual({ data: [{ repairId: 1 }], total: 1, page: 1, limit: 20 });
+  });
+
+  it('maps the originating support ticket onto each repair', async () => {
+    const { service, qb } = buildService([], 0);
+    await service.findAll({});
+    expect(qb.leftJoinAndMapOne).toHaveBeenCalledWith('r.ticket', expect.anything(), 'ticket', 'ticket.repairId = r.repairId');
   });
 
   it('applies skip/take from page and limit', async () => {

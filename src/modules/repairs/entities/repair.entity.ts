@@ -4,6 +4,7 @@ import { RepairStatus, RepairResult } from '@common/enums';
 import { Asset } from '../../assets/entities/asset.entity';
 import { Vendor } from '../../vendors/entities/vendor.entity';
 import { Employee } from '../../employees/entities/employee.entity';
+import type { SupportTicket } from '../../support-tickets/entities/support-ticket.entity';
 
 /** ⚠️ สมมติฐาน (ไม่มีใน DBML ที่แนบ) — ตาม repair_status_enum / repair_result_enum ที่ประกาศไว้แล้ว */
 @Entity('repairs')
@@ -53,4 +54,10 @@ export class Repair extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   notes: string;
+
+  /**
+   * ไม่ใช่ column — ticket แจ้งปัญหาที่กด "ส่งซ่อม" แล้วได้งานซ่อมนี้ (ผูกด้วย support_tickets.repair_id)
+   * RepairsService.findAll/findOne เติมให้ ใช้แสดง "ที่มา" ของงานซ่อมในหน้า frontend
+   */
+  ticket?: Pick<SupportTicket, 'ticketId' | 'ticketNo' | 'subject'> | null;
 }

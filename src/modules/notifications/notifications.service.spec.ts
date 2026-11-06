@@ -101,3 +101,38 @@ describe('NotificationsService', () => {
     );
   });
 });
+
+describe('NotificationsService#streamFor (live changes)', () => {
+  const service = new NotificationsService({} as any, {} as any, { send: jest.fn() } as any);
+
+  function collect(employeeId: number, permissions: string[]) {
+    const received: any[] = [];
+    const sub = service.streamFor(employeeId, permissions).subscribe((e) => received.push(e));
+    return { received, sub };
+  }
+
+  it('delivers a change as a named "change" SSE event to holders of the audience permission', () => {
+    const admin = collect(1, ['ticket.view_all', 'ticket.manage']);
+    const employee = collect(7, ['ticket.view_own']);
+
+    service.publishChange({ topic: 'support_ticket', action: 'created', id: 5, audience: { permission: 'ticket.view_all' } });
+
+    expect(admin.received).toEqual([{ type: 'change', data: { topic: 'support_ticket', action: 'created', id: 5 } }]);
+    expect(employee.received).toEqual([]);
+    admin.sub.unsubscribe();
+    employee.sub.unsubscribe();
+  });
+
+  it('delivers to explicitly listed employees even without the permission (ticket reporter)', () => {
+    const reporter = collect(7, ['ticket.view_own']);
+    const other = collect(8, ['ticket.view_own']);
+
+    service.publishChange({ topic: 'support_ticket', action: 'updated', id: 5, audience: { permission: 'ticket.view_all', employeeIds: [7] } });
+
+    expect(reporter.received).toHaveLength(1);
+    expect(other.received).toEqual([]);
+    reporter.sub.unsubscribe();
+    other.sub.unsubscribe();
+  });
+});
+

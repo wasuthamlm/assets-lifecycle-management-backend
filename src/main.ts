@@ -61,8 +61,8 @@ async function bootstrap() {
     if (swaggerConfigured) app.use('/api/docs', swaggerBasicAuth);
 
     const config = new DocumentBuilder()
-      .setTitle('IT Asset Lifecycle Management API')
-      .setDescription('ระบบทรัพย์สิน IT — ซื้อ -> รับของ -> เบิก/ยืม -> ส่งมอบ/คืน -> ซ่อม -> ประกัน -> จำหน่ายทิ้ง')
+      .setTitle('IT Asset & Support Management API')
+      .setDescription('ระบบทรัพย์สิน และ Support ด้าน IT — ซื้อ -> รับของ -> เบิก/ยืม -> ส่งมอบ/คืน -> แจ้งปัญหา/ซ่อม -> ประกัน -> จำหน่ายทิ้ง')
       .setVersion('1.0')
       .addBearerAuth()
       .build();

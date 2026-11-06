@@ -21,7 +21,7 @@ export class NotificationsController {
   // ต้องใช้ client ที่ตั้ง header Authorization ได้ (เช่น fetch-based SSE) เพราะ EventSource ของเบราว์เซอร์เองส่ง header เองไม่ได้
   @Sse('stream')
   stream(@CurrentUser() user: CurrentUserPayload) {
-    return this.service.streamFor(requireEmployeeId(user));
+    return this.service.streamFor(requireEmployeeId(user), user.permissions);
   }
 
   @Get('unread-count')

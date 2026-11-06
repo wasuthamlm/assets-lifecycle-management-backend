@@ -1,12 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Repair } from './entities/repair.entity';
 import { Asset } from '../assets/entities/asset.entity';
+import { SupportTicket } from '../support-tickets/entities/support-ticket.entity';
 import { CreateRepairDto } from './dto/create-repair.dto';
 import { UpdateRepairStatusDto } from './dto/update-repair-status.dto';
 import { QueryRepairDto } from './dto/query-repair.dto';
-import { AssetStatus, MovementType, NotificationType, RepairResult, RepairStatus } from '@common/enums';
+import { AssetStatus, MovementType, NotificationType, RepairResult, RepairStatus, TicketStatus } from '@common/enums';
 import { MovementsService } from '../movements/movements.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { assertAssetStatus } from '@common/utils/assert-asset-status.util';
@@ -49,48 +50,59 @@ export class RepairsService {
   ) {}
 
   async create(dto: CreateRepairDto, reportedBy: number) {
-    const { repair, asset } = await this.dataSource.transaction(async (manager) => {
-      const asset = await manager.findOne(Asset, {
-        where: { assetId: dto.assetId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!asset) throw new NotFoundException(`ไม่พบทรัพย์สิน id ${dto.assetId}`);
-      // กันแจ้งซ่อมทรัพย์สินที่จำหน่ายทิ้งไปแล้ว หรือกำลังอยู่ระหว่างซ่อมอยู่แล้ว (เปิดงานซ่อมซ้อนกัน)
-      assertAssetStatus(asset, [AssetStatus.IN_STOCK, AssetStatus.ASSIGNED], 'แจ้งซ่อมทรัพย์สินนี้');
+    const { repair, asset } = await this.dataSource.transaction((manager) =>
+      this.createInTransaction(manager, dto, reportedBy),
+    );
+    await this.notifyRepairReported(repair, asset, reportedBy);
+    return repair;
+  }
 
-      const repair = manager.create(Repair, { ...dto, reportedBy, status: RepairStatus.REPORTED });
-      await manager.save(repair);
-
-      asset.currentStatus = AssetStatus.UNDER_REPAIR;
-      await manager.save(asset);
-
-      await this.movementsService.log(
-        {
-          assetId: asset.assetId,
-          movementType: MovementType.SENT_TO_REPAIR,
-          referenceType: 'repair',
-          referenceId: repair.repairId,
-          performedBy: reportedBy,
-          notes: dto.problemDescription,
-        },
-        manager,
-      );
-
-      return { repair, asset };
+  /**
+   * แยกส่วน transaction ออกมาให้ SupportTicketsService ("ส่งซ่อม" จาก ticket) สร้าง repair + ผูก repairId
+   * กลับไปที่ ticket ใน transaction เดียวกันได้ — ผู้เรียกต้องเรียก notifyRepairReported() เองหลัง commit
+   */
+  async createInTransaction(manager: EntityManager, dto: CreateRepairDto, reportedBy: number) {
+    const asset = await manager.findOne(Asset, {
+      where: { assetId: dto.assetId },
+      lock: { mode: 'pessimistic_write' },
     });
+    if (!asset) throw new NotFoundException(`ไม่พบทรัพย์สิน id ${dto.assetId}`);
+    // กันแจ้งซ่อมทรัพย์สินที่จำหน่ายทิ้งไปแล้ว หรือกำลังอยู่ระหว่างซ่อมอยู่แล้ว (เปิดงานซ่อมซ้อนกัน)
+    assertAssetStatus(asset, [AssetStatus.IN_STOCK, AssetStatus.ASSIGNED], 'แจ้งซ่อมทรัพย์สินนี้');
 
-    // นอก transaction เสมอ (เหมือน requisitions) — แจ้งทุกคนที่จัดการงานซ่อมได้ ยกเว้นคนที่แจ้งเอง
+    const repair = manager.create(Repair, { ...dto, reportedBy, status: RepairStatus.REPORTED });
+    await manager.save(repair);
+
+    asset.currentStatus = AssetStatus.UNDER_REPAIR;
+    await manager.save(asset);
+
+    await this.movementsService.log(
+      {
+        assetId: asset.assetId,
+        movementType: MovementType.SENT_TO_REPAIR,
+        referenceType: 'repair',
+        referenceId: repair.repairId,
+        performedBy: reportedBy,
+        notes: dto.problemDescription,
+      },
+      manager,
+    );
+
+    return { repair, asset };
+  }
+
+  // นอก transaction เสมอ (เหมือน requisitions) — แจ้งทุกคนที่จัดการงานซ่อมได้ ยกเว้นคนที่แจ้งเอง
+  async notifyRepairReported(repair: Repair, asset: Asset, reportedBy: number) {
+    this.publishRepairChange(repair.repairId, 'created');
     await this.notifications.notifyByPermission(
       'repair.update',
       NotificationType.REPAIR_REPORTED,
       'มีการแจ้งซ่อมใหม่',
-      `ทรัพย์สิน ${asset.assetNo} (${asset.assetName}) ถูกแจ้งซ่อม: ${dto.problemDescription}`,
+      `ทรัพย์สิน ${asset.assetNo} (${asset.assetName}) ถูกแจ้งซ่อม: ${repair.problemDescription}`,
       'repair',
       repair.repairId,
       { exclude: [reportedBy] },
     );
-
-    return repair;
   }
 
   /**
@@ -98,7 +110,12 @@ export class RepairsService {
    * leftJoinAndSelect + skip/take ในคิวรีเดียวได้เลย ไม่เสี่ยง row-multiplication
    */
   findAll(query: QueryRepairDto) {
-    const qb = this.repo.createQueryBuilder('r').leftJoinAndSelect('r.asset', 'asset').leftJoinAndSelect('r.vendor', 'vendor');
+    // ticket ↔ repair เป็น 1:1 (escalateToRepair สร้าง repair ใหม่ทุกครั้ง) จึง join ในคิวรีเดียวกับ skip/take ได้
+    const qb = this.repo
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.asset', 'asset')
+      .leftJoinAndSelect('r.vendor', 'vendor')
+      .leftJoinAndMapOne('r.ticket', SupportTicket, 'ticket', 'ticket.repairId = r.repairId');
 
     if (query.search) {
       qb.andWhere('(asset.assetName ILIKE :s OR asset.assetNo ILIKE :s OR r.problemDescription ILIKE :s)', {
@@ -117,11 +134,16 @@ export class RepairsService {
   async findOne(id: number) {
     const r = await this.repo.findOne({ where: { repairId: id }, relations: ['asset', 'vendor'] });
     if (!r) throw new NotFoundException(`ไม่พบงานซ่อม id ${id}`);
+    r.ticket = await this.dataSource.getRepository(SupportTicket).findOne({
+      where: { repairId: id },
+      select: { ticketId: true, ticketNo: true, subject: true },
+    });
     return r;
   }
 
   async updateStatus(id: number, dto: UpdateRepairStatusDto, updatedBy: number) {
     let statusChanged = false;
+    let resolvedTickets: SupportTicket[] = [];
     const repair = await this.dataSource.transaction(async (manager) => {
       const repair = await manager.findOne(Repair, { where: { repairId: id }, lock: { mode: 'pessimistic_write' } });
       if (!repair) throw new NotFoundException(`ไม่พบงานซ่อม id ${id}`);
@@ -166,10 +188,40 @@ export class RepairsService {
             manager,
           );
         }
+
+        // ticket ที่ส่งซ่อมมาจากงานซ่อมนี้ → ปิดงานซ่อมแล้วถือว่า ticket แก้ไขแล้วด้วย (ผู้แจ้งยังกดดูผลได้ใน ticket)
+        resolvedTickets = await manager.find(SupportTicket, {
+          where: { repairId: repair.repairId, status: In([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        for (const ticket of resolvedTickets) {
+          ticket.status = TicketStatus.RESOLVED;
+          ticket.resolvedAt = new Date();
+          ticket.resolution ??= `ปิดงานซ่อม — ผล: ${repair.result ? REPAIR_RESULT_LABEL[repair.result] : '-'}`;
+          await manager.save(ticket);
+        }
       }
 
       return repair;
     });
+
+    this.publishRepairChange(repair.repairId, 'updated');
+    for (const ticket of resolvedTickets) {
+      this.notifications.publishChange({
+        topic: 'support_ticket',
+        action: 'updated',
+        id: ticket.ticketId,
+        audience: { permission: 'ticket.view_all', employeeIds: [ticket.reportedBy] },
+      });
+      await this.notifications.notify(
+        ticket.reportedBy,
+        NotificationType.TICKET_STATUS_UPDATED,
+        `Ticket ${ticket.ticketNo}: แก้ไขแล้ว`,
+        `เรื่อง "${ticket.subject}" ที่คุณแจ้ง ซ่อมเสร็จและปิดงานแล้ว — ${ticket.resolution}`,
+        'support_ticket',
+        ticket.ticketId,
+      );
+    }
 
     // แจ้งผู้แจ้งซ่อมเฉพาะตอนสถานะเปลี่ยนจริง (แก้แค่ค่าซ่อม/หมายเหตุไม่ต้องแจ้ง) และไม่แจ้งถ้าเป็นคนอัปเดตเอง
     if (statusChanged && repair.reportedBy !== updatedBy) {
@@ -186,5 +238,9 @@ export class RepairsService {
     }
 
     return repair;
+  }
+
+  private publishRepairChange(repairId: number, action: 'created' | 'updated') {
+    this.notifications.publishChange({ topic: 'repair', action, id: repairId, audience: { permission: 'repair.view' } });
   }
 }

@@ -27,6 +27,7 @@ import { RequisitionsModule } from './modules/requisitions/requisitions.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
 import { MovementsModule } from './modules/movements/movements.module';
 import { RepairsModule } from './modules/repairs/repairs.module';
+import { SupportTicketsModule } from './modules/support-tickets/support-tickets.module';
 import { WarrantyModule } from './modules/warranty/warranty.module';
 import { DisposalModule } from './modules/disposal/disposal.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
@@ -80,6 +81,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     AssignmentsModule,
     MovementsModule,
     RepairsModule,
+    SupportTicketsModule,
     WarrantyModule,
     DisposalModule,
     AttachmentsModule,

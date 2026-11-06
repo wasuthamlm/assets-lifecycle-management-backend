@@ -32,6 +32,7 @@ const PERMISSIONS = [
   'requisition.create', 'requisition.view_own', 'requisition.view_all', 'requisition.approve', 'requisition.create_on_behalf',
   'assignment.issue', 'assignment.return', 'assignment.view_all',
   'repair.create', 'repair.view', 'repair.update',
+  'ticket.create', 'ticket.view_own', 'ticket.view_all', 'ticket.manage',
   'warranty.manage',
   'disposal.create', 'disposal.view',
   'attachment.manage', 'attachment.view',
@@ -92,7 +93,7 @@ async function run() {
     permissionEntities.map((p) => rolePermissionRepo.create({ roleId: adminRole!.roleId, permissionId: p.permissionId })),
   );
 
-  const employeeBasicCodes = ['requisition.create', 'requisition.view_own', 'asset.view'];
+  const employeeBasicCodes = ['requisition.create', 'requisition.view_own', 'asset.view', 'ticket.create', 'ticket.view_own'];
   const employeePermissions = permissionEntities.filter((p) => employeeBasicCodes.includes(p.permissionCode));
   await rolePermissionRepo.delete({ roleId: employeeRole.roleId });
   await rolePermissionRepo.save(
@@ -110,6 +111,10 @@ async function run() {
     'requisition.create',
     'requisition.create_on_behalf',
     'assignment.view_all',
+    // แจ้งปัญหา IT เองได้ + ดู ticket ทุกคนแบบอ่านอย่างเดียว (ไม่มี ticket.manage)
+    'ticket.create',
+    'ticket.view_own',
+    'ticket.view_all',
   ];
   const hrPermissions = permissionEntities.filter((p) => hrCodes.includes(p.permissionCode));
   await rolePermissionRepo.delete({ roleId: hrRole.roleId });

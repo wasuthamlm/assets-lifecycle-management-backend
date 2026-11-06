@@ -419,7 +419,7 @@ export class AuthService {
   async me(currentUser: CurrentUserPayload) {
     const user = await this.usersRepo.findOne({
       where: { userId: currentUser.userId },
-      relations: ['employee', 'employee.department'],
+      relations: ['employee', 'employee.department', 'employee.department.parent'],
     });
     if (!user) throw new UnauthorizedException();
 
@@ -443,7 +443,12 @@ export class AuthService {
             email: user.employee.email,
             phone: user.employee.phone,
             department: user.employee.department
-              ? { departmentId: user.employee.department.departmentId, departmentName: user.employee.department.departmentName }
+              ? {
+                  departmentId: user.employee.department.departmentId,
+                  departmentName: user.employee.department.departmentName,
+                  // ฝ่าย = แผนกแม่ — ฟอร์มแจ้งปัญหา IT แสดงก่อนกดส่ง (ticket เก็บ snapshot เองอีกชั้นตอนสร้าง)
+                  parentDepartmentName: user.employee.department.parent?.departmentName ?? null,
+                }
               : null,
           }
         : null,

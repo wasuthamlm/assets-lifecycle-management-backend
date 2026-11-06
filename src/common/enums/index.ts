@@ -102,4 +102,31 @@ export enum NotificationType {
   REPAIR_STATUS_UPDATED = 'repair_status_updated',
   ASSIGNMENT_ISSUED = 'assignment_issued',
   ASSIGNMENT_RETURNED = 'assignment_returned',
+  TICKET_CREATED = 'ticket_created',
+  TICKET_STATUS_UPDATED = 'ticket_status_updated',
+}
+
+// ไม่มีใน DBML — ระบบแจ้งปัญหา IT Support (ดู modules/support-tickets)
+export enum TicketStatus {
+  OPEN = 'open',
+  IN_PROGRESS = 'in_progress',
+  RESOLVED = 'resolved',
+  CLOSED = 'closed',
+  CANCELLED = 'cancelled',
+}
+
+export enum TicketCategory {
+  HARDWARE = 'hardware',
+  ACCESSORY = 'accessory',
+  SOFTWARE = 'software',
+  NETWORK = 'network',
+  ACCOUNT = 'account',
+  OTHER = 'other',
+}
+
+export enum TicketPriority {
+  LOW = 'low',
+  NORMAL = 'normal',
+  HIGH = 'high',
+  URGENT = 'urgent',
 }

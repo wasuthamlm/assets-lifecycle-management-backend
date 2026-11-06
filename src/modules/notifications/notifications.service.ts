@@ -1,11 +1,24 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import { Subject, filter, map } from 'rxjs';
+import { Subject, filter, map, merge } from 'rxjs';
 import { Notification } from './entities/notification.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { NotificationType } from '@common/enums';
 import { MailService } from '../mail/mail.service';
+
+/**
+ * สัญญาณว่า "ข้อมูลชุดนี้เปลี่ยน ให้หน้าจอที่เปิดอยู่ refetch" — ไม่บันทึกลง DB และไม่เด้งเป็นแจ้งเตือน
+ * (ต่างจาก Notification) ใช้ทำให้ตาราง/หน้ารายละเอียดของคนที่ไม่ได้เป็นผู้รับแจ้งเตือนอัปเดตสดด้วย
+ * เช่น IT คนหนึ่งรับงาน ticket → หน้าจอ IT คนอื่นและ hr เห็นทันที กันรับงานซ้ำ
+ */
+export interface LiveChange {
+  topic: 'support_ticket' | 'repair';
+  action: 'created' | 'updated';
+  id: number;
+  /** ส่งให้คนที่มี permission นี้ และ/หรือ employeeId เหล่านี้ (เช่น เจ้าของ ticket ที่ไม่มี view_all) */
+  audience: { permission?: string; employeeIds?: number[] };
+}
 
 @Injectable()
 export class NotificationsService {
@@ -14,6 +27,7 @@ export class NotificationsService {
   // Stream ของ notification ที่เพิ่งสร้างสำเร็จ ให้ controller filter ตาม recipientEmployeeId แล้ว push ผ่าน SSE
   // อยู่ในหน่วยความจำของ instance เดียว — ถ้า scale เกิน 1 instance ต้องเปลี่ยนไปใช้ pub/sub กลาง (เช่น Redis) แทน
   private readonly events$ = new Subject<Notification>();
+  private readonly changes$ = new Subject<LiveChange>();
 
   constructor(
     @InjectRepository(Notification) private repo: Repository<Notification>,
@@ -21,12 +35,31 @@ export class NotificationsService {
     private mailService: MailService,
   ) {}
 
-  /** ใช้จาก controller เพื่อ subscribe เฉพาะการแจ้งเตือนของพนักงานคนนั้นๆ */
-  streamFor(employeeId: number) {
-    return this.events$.pipe(
-      filter((n) => n.recipientEmployeeId === employeeId),
-      map((n) => ({ data: n })),
+  /**
+   * ใช้จาก controller — รวม 2 อย่างใน connection เดียว:
+   * - แจ้งเตือนของพนักงานคนนั้น (SSE event ชื่อ default "message" — frontend เดิมฟัง onmessage อยู่แล้ว)
+   * - LiveChange ที่ผู้ใช้มีสิทธิ์เห็น (SSE event ชื่อ "change") — permissions เป็นค่า ณ ตอนเปิด connection
+   */
+  streamFor(employeeId: number, permissions: string[] = []) {
+    return merge(
+      this.events$.pipe(
+        filter((n) => n.recipientEmployeeId === employeeId),
+        map((n) => ({ data: n })),
+      ),
+      this.changes$.pipe(
+        filter(
+          ({ audience }) =>
+            (!!audience.permission && permissions.includes(audience.permission)) ||
+            (audience.employeeIds?.includes(employeeId) ?? false),
+        ),
+        map(({ topic, action, id }) => ({ type: 'change', data: { topic, action, id } })),
+      ),
     );
+  }
+
+  /** เรียกหลัง commit แล้วเท่านั้น (เหมือน notify) — ไม่มี I/O จึงไม่ต้อง try/catch */
+  publishChange(change: LiveChange) {
+    this.changes$.next(change);
   }
 
   /**
