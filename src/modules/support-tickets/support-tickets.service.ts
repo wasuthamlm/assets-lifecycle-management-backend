@@ -101,6 +101,7 @@ export class SupportTicketsService {
         description: dto.description ?? null,
         priority: dto.priority ?? TicketPriority.NORMAL,
         assetId: dto.assetId ?? null,
+        assetText: dto.assetId ? null : dto.assetText?.trim() || null,
         assignmentId,
         locationId: dto.locationId ?? null,
         locationDetail: dto.locationDetail.trim(),
@@ -150,7 +151,7 @@ export class SupportTicketsService {
     if (reportedBy !== undefined) qb.andWhere('t.reportedBy = :reportedBy', { reportedBy });
     if (query.search) {
       qb.andWhere(
-        "(t.ticketNo ILIKE :s OR t.subject ILIKE :s OR t.reporterInfo->>'fullName' ILIKE :s OR asset.assetNo ILIKE :s OR t.locationDetail ILIKE :s)",
+        "(t.ticketNo ILIKE :s OR t.subject ILIKE :s OR t.reporterInfo->>'fullName' ILIKE :s OR asset.assetNo ILIKE :s OR t.assetText ILIKE :s OR t.locationDetail ILIKE :s)",
         { s: `%${query.search}%` },
       );
     }

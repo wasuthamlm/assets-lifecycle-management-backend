@@ -6,6 +6,7 @@ import { Notification } from './entities/notification.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { NotificationType } from '@common/enums';
 import { MailService } from '../mail/mail.service';
+import { toThaiDateString } from '@common/utils/thai-date.util';
 
 /**
  * สัญญาณว่า "ข้อมูลชุดนี้เปลี่ยน ให้หน้าจอที่เปิดอยู่ refetch" — ไม่บันทึกลง DB และไม่เด้งเป็นแจ้งเตือน
@@ -74,6 +75,7 @@ export class NotificationsService {
     message: string,
     referenceType?: string,
     referenceId?: number,
+    options?: { sendEmail?: boolean },
   ): Promise<Notification | null> {
     try {
       const notification = await this.repo.save(
@@ -90,7 +92,7 @@ export class NotificationsService {
       this.events$.next(notification);
 
       const recipient = await this.employeeRepo.findOne({ where: { employeeId: recipientEmployeeId } });
-      if (recipient?.email) {
+      if (recipient?.email && options?.sendEmail !== false) {
         await this.mailService.send(recipient.email, title, message);
       }
 
@@ -143,11 +145,15 @@ export class NotificationsService {
     message: string,
     referenceType?: string,
     referenceId?: number,
-    options?: { exclude?: number[] },
+    options?: { exclude?: number[]; sendEmail?: boolean },
   ): Promise<void> {
     const exclude = new Set(options?.exclude ?? []);
     const recipients = [...new Set(recipientEmployeeIds)].filter((id) => !exclude.has(id));
-    await Promise.all(recipients.map((id) => this.notify(id, type, title, message, referenceType, referenceId)));
+    await Promise.all(
+      recipients.map((id) =>
+        this.notify(id, type, title, message, referenceType, referenceId, { sendEmail: options?.sendEmail }),
+      ),
+    );
   }
 
   /** แจ้งทุกคนที่มี permission นี้ — รวม lookup ไว้ใน try เดียวกัน ให้ best-effort ทั้งก้อน */
@@ -245,8 +251,8 @@ export class NotificationsService {
 
   /** ใช้จาก cron กันแจ้งเตือนซ้ำในวันเดียวกัน — เช็คว่ามี notification ชนิด+reference นี้ถูกสร้างวันนี้แล้วหรือยัง */
   async alreadyNotifiedToday(recipientEmployeeId: number, type: NotificationType, referenceId: number) {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    // เที่ยงคืนตามเวลาไทย ไม่ใช่ของ TZ process (ซึ่งเป็น UTC)
+    const startOfToday = new Date(`${toThaiDateString(new Date())}T00:00:00+07:00`);
 
     const count = await this.repo
       .createQueryBuilder('n')

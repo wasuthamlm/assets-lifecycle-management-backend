@@ -1,6 +1,7 @@
 import { Requisition } from './entities/requisition.entity';
 import { RequisitionItem } from './entities/requisition-item.entity';
 import { RequestType } from '@common/enums';
+import { toThaiDateString } from '@common/utils/thai-date.util';
 
 const THAI_MONTHS = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -11,7 +12,8 @@ function formatThaiDate(value: Date | string | null | undefined): string {
   if (!value) return '';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
-  return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`;
+  const [y, m, day] = toThaiDateString(d).split('-').map(Number);
+  return `${day} ${THAI_MONTHS[m - 1]} พ.ศ. ${y + 543}`;
 }
 
 function esc(value: unknown): string {

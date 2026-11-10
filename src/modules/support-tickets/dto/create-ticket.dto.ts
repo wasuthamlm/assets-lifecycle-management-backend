@@ -25,6 +25,12 @@ export class CreateTicketDto {
   @IsInt()
   assetId?: number;
 
+  @ApiPropertyOptional({ description: 'ชื่ออุปกรณ์ที่ผู้แจ้งพิมพ์เอง เมื่อไม่ใช่ของที่ถือ/ยืมอยู่ในระบบ — ส่ง assetId มาด้วยจะไม่เก็บช่องนี้' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  assetText?: string;
+
   @ApiPropertyOptional({ description: 'อาคาร/สถานที่ (locations master)' })
   @IsOptional()
   @IsInt()

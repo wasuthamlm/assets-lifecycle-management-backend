@@ -11,6 +11,7 @@ import { RolesPermissionsService } from './roles-permissions.service';
 import { RolesPermissionsController } from './roles-permissions.controller';
 import { RolePreassignmentsService } from './role-preassignments.service';
 import { RolePreassignmentsController } from './role-preassignments.controller';
+import { PermissionCacheService } from './permission-cache.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AllowedDomainsModule } from '../allowed-domains/allowed-domains.module';
 
@@ -21,7 +22,7 @@ import { AllowedDomainsModule } from '../allowed-domains/allowed-domains.module'
     AllowedDomainsModule,
   ],
   controllers: [RolesPermissionsController, RolePreassignmentsController],
-  providers: [RolesPermissionsService, RolePreassignmentsService],
-  exports: [RolesPermissionsService, RolePreassignmentsService, TypeOrmModule],
+  providers: [RolesPermissionsService, RolePreassignmentsService, PermissionCacheService],
+  exports: [RolesPermissionsService, RolePreassignmentsService, PermissionCacheService, TypeOrmModule],
 })
 export class RolesPermissionsModule {}

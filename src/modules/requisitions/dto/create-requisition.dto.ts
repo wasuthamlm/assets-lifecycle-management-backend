@@ -37,13 +37,15 @@ class AccessoriesInput {
   @ApiPropertyOptional() @IsOptional() @IsString() other?: string;
 }
 
-// พนักงานใหม่ที่ยังไม่มีในระบบ (มักยังไม่มีเมลด้วย) — HR กรอกตอนเบิกอุปกรณ์ให้ ระบบสร้าง employee ให้พร้อมใบขอ
-// พอคนนี้ได้เมลแล้ว login ครั้งแรก กรอกรหัสพนักงาน+ชื่อให้ตรง ระบบจะผูกบัญชีเข้ากับข้อมูลนี้ (ดู AuthService.completeEmployeeProfile)
+// พนักงานใหม่ที่ยังไม่มีในระบบ — HR กรอกตอนเบิกอุปกรณ์ให้ ระบบสร้าง employee ให้พร้อมใบขอ
+// ต้องมีรหัสพนักงานหรืออีเมลอย่างน้อยหนึ่งอย่าง (เช็คใน RequisitionsService.create) ไว้ผูกบัญชีตอนพนักงาน login ครั้งแรก:
+// - อีเมล: login ด้วยอีเมลนี้แล้วผูกให้อัตโนมัติ ไม่ต้องกรอกอะไร (AuthService.findEmployeeByEmail)
+// - รหัสพนักงาน: กรอกรหัส+ชื่อให้ตรงในหน้ากรอกข้อมูลครั้งแรก (AuthService.completeEmployeeProfile)
 class NewEmployeeInput {
-  @ApiProperty({ example: 'EMP-0010', description: 'ใช้จับคู่ตอนพนักงาน login ครั้งแรก' })
+  @ApiPropertyOptional({ example: 'EMP-0010', description: 'ใช้ผูกบัญชีตอนพนักงานกรอกข้อมูลครั้งแรก — ไม่บังคับถ้ากรอกอีเมล' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  employeeCode: string;
+  employeeCode?: string;
 
   @ApiProperty({ example: 'สมชาย ใจดี' })
   @IsString()
@@ -53,7 +55,7 @@ class NewEmployeeInput {
   @ApiPropertyOptional() @IsOptional() @IsInt() departmentId?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() position?: string;
 
-  @ApiPropertyOptional({ description: 'อีเมลบริษัท ถ้ามีแล้ว — ระบบจะผูกบัญชีให้อัตโนมัติตอน login' })
+  @ApiPropertyOptional({ description: 'อีเมลบริษัท — ระบบจะผูกบัญชีให้อัตโนมัติตอน login ไม่บังคับถ้ากรอกรหัสพนักงาน' })
   @IsOptional()
   @IsEmail()
   email?: string;

@@ -670,6 +670,27 @@ describe('RequisitionsService#create (new employee not yet in the system)', () =
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
+  it('accepts a new employee with only an email (no employee code yet)', async () => {
+    const { service, manager } = buildService();
+    await service.create({ ...baseDto, newEmployee: { fullName: 'พนักงาน ใหม่', employeeCode: '  ', email: 'new.hire@millimedthailand.com' } }, hr);
+    expect(manager.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ employeeCode: null, email: 'new.hire@millimedthailand.com' }),
+    );
+  });
+
+  it('accepts a new employee with only an employee code (no email yet)', async () => {
+    const { service, manager } = buildService();
+    await service.create({ ...baseDto, newEmployee: { fullName: 'พนักงาน ใหม่', employeeCode: 'EMP-0100' } }, hr);
+    expect(manager.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ employeeCode: 'EMP-0100', email: undefined }));
+  });
+
+  it('rejects a new employee with neither employee code nor email, before touching the transaction', async () => {
+    const { service, dataSource } = buildService();
+    await expect(service.create({ ...baseDto, newEmployee: { fullName: 'พนักงาน ใหม่', employeeCode: '' } }, hr)).rejects.toThrow(BadRequestException);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects an employeeCode that already exists', async () => {
     const { service } = buildService({ employeeId: 3, employeeCode: 'EMP-0099' });
     await expect(service.create(baseDto, hr)).rejects.toThrow(ConflictException);

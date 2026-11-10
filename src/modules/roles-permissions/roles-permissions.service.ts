@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Role } from './entities/role.entity';
@@ -12,9 +12,12 @@ import { AssignPermissionsDto } from './dto/assign-permission.dto';
 import { AssignRolesDto } from './dto/assign-role.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '@common/enums';
+import { PermissionCacheService } from './permission-cache.service';
 
 @Injectable()
 export class RolesPermissionsService {
+  private readonly logger = new Logger(RolesPermissionsService.name);
+
   constructor(
     @InjectRepository(Role) private roleRepo: Repository<Role>,
     @InjectRepository(Permission) private permissionRepo: Repository<Permission>,
@@ -23,6 +26,7 @@ export class RolesPermissionsService {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
+    private permissionCache: PermissionCacheService,
   ) {}
 
   // ---- Roles ----
@@ -85,7 +89,7 @@ export class RolesPermissionsService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const role = await this.dataSource.transaction(async (manager) => {
       await manager.delete(RolePermission, { roleId });
       const rows = dto.permissionIds.map((permissionId) => manager.create(RolePermission, { roleId, permissionId }));
       await manager.save(rows);
@@ -95,6 +99,28 @@ export class RolesPermissionsService {
         relations: ['rolePermissions', 'rolePermissions.permission'],
       });
     });
+
+    // ล้างแคชก่อนแจ้ง แล้วแจ้งทุกคนที่ถือ role นี้แบบ realtime — frontend เห็น permissions_updated แล้ว refetch
+    // /auth/me + ข้อมูลทุกหน้าเอง (ดู useNotificationsStream/useCurrentUser) ไม่ต้องกด refresh
+    // ไม่ส่งอีเมล: role ทั่วไป (เช่น employee) มีคนถือเป็นร้อย แก้ทีเดียวไม่ควรยิงเมลหาทุกคน
+    this.permissionCache.clear();
+    try {
+      const holders = await this.employeeRoleRepo.find({ where: { roleId }, select: { employeeId: true } });
+      await this.notificationsService.notifyMany(
+        holders.map((h) => h.employeeId),
+        NotificationType.PERMISSIONS_UPDATED,
+        'สิทธิ์การใช้งานของคุณได้รับการอัปเดต',
+        `ผู้ดูแลระบบปรับสิทธิ์ของบทบาท "${role?.roleName}" ที่คุณถืออยู่ — หน้าจอจะอัปเดตให้อัตโนมัติ`,
+        'role',
+        roleId,
+        { sendEmail: false },
+      );
+    } catch (err) {
+      // best-effort — สิทธิ์บันทึกสำเร็จไปแล้ว ห้ามให้การแจ้งเตือนทำให้ admin เห็นเป็น error
+      this.logger.warn(`แจ้งผู้ถือ role ${roleId} ว่าสิทธิ์เปลี่ยนไม่สำเร็จ: ${(err as Error).message}`);
+    }
+
+    return role;
   }
 
   // ---- Assign roles ให้ employee (replace ทั้งชุด, รองรับหลาย role ต่อคน) ----
@@ -118,6 +144,9 @@ export class RolesPermissionsService {
       await this.assertRbacAdminRemains(manager);
       return saved;
     });
+
+    // ต้องล้างแคชก่อนแจ้ง — frontend refetch /auth/me ทันทีที่ได้แจ้งเตือน ถ้าแคชยังอยู่จะได้สิทธิ์เดิมกลับไป
+    this.permissionCache.invalidateEmployee(employeeId);
 
     // แจ้งเจ้าตัวทันทีที่ role เปลี่ยน — ฝั่ง frontend ใช้ตรงนี้ auto-refresh /auth/me เอง
     // (ดู useNotificationsStream) กันไม่ให้ user ที่รอ permission อยู่ต้องกด refresh เอง

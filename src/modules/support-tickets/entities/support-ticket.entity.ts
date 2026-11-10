@@ -74,6 +74,9 @@ export class SupportTicket extends BaseEntity {
   @JoinColumn({ name: 'asset_id' })
   asset: Asset;
 
+  @Column({ name: 'asset_text', type: 'varchar', length: 200, nullable: true, comment: 'ชื่ออุปกรณ์ที่ผู้แจ้งพิมพ์เอง (ไม่ได้เลือกจากของที่ถือ/ยืมอยู่)' })
+  assetText: string | null;
+
   @Column({ name: 'assignment_id', nullable: true, comment: 'การเบิก/ยืมที่ผู้แจ้งถืออยู่ตอนแจ้ง (เช่น ยืมสาย HDMI แล้วใช้ไม่ได้)' })
   assignmentId: number | null;
 

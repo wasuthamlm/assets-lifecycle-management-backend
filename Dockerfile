@@ -12,6 +12,8 @@ RUN npm run build
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
+# เวลาใน DB เก็บเป็น UTC — ดู src/config/timezone.ts
+ENV TZ=UTC
 
 COPY package.json package-lock.json ./
 # ใช้ node_modules ที่ compile (รวม argon2 native binding) ไว้แล้วจาก builder stage แทนการ npm ci ซ้ำ —

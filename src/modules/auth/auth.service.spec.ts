@@ -1,6 +1,16 @@
 import * as argon2 from 'argon2';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { AuthService, normalizeEmployeeName } from './auth.service';
+
+/** query builder ของ hasUnclaimedEmployeeNamed (leftJoin users) — ค่าเริ่มต้นคือไม่มี employee ที่ HR สร้างรอไว้ */
+function unclaimedEmployeesQb(rows: unknown[] = []) {
+  return {
+    leftJoin: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue(rows),
+  };
+}
 
 describe('AuthService', () => {
   const jwtService = { signAsync: jest.fn().mockResolvedValue('token') } as any;
@@ -474,7 +484,9 @@ describe('AuthService', () => {
       const adminEmployees = [{ employeeId: 7 }, { employeeId: 8 }];
       const queryBuilder = {
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue(adminEmployees),
       };
       const localEmployeesRepo = {
@@ -529,6 +541,59 @@ describe('AuthService', () => {
       );
     });
 
+    describe('when HR already pre-created an unclaimed employee with the same name', () => {
+      const user = { userId: 1, employeeId: null, email: 'mabel@millimedthailand.com' };
+      const makeService = () => {
+        const usersRepo = { findOne: jest.fn().mockResolvedValue(user), save: jest.fn() } as any;
+        const queryBuilder = {
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([{ employeeId: 17, fullName: 'มาเบล สุดสวยเทสเทสเทส', email: null }]),
+        };
+        const localEmployeesRepo = {
+          findOne: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+          save: jest.fn(),
+          createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+        } as any;
+        const service = new AuthService(
+          usersRepo,
+          localEmployeesRepo,
+          jwtService,
+          config,
+          jwtStrategy,
+          mailService,
+          allowedDomainsService,
+          supabaseIdentity,
+          notificationsService,
+          departmentsRepo,
+          rolePreassignments,
+        );
+        return { service, localEmployeesRepo, usersRepo };
+      };
+
+      it('asks for the employee code instead of creating a duplicate when it is left blank', async () => {
+        const { service, localEmployeesRepo, usersRepo } = makeService();
+
+        // พิมพ์คำนำหน้า/เว้นวรรคต่างจากที่ HR กรอก ก็ต้องจับได้
+        await expect(
+          service.completeEmployeeProfile(1, { fullName: 'น.ส. มาเบล  สุดสวยเทสเทสเทส' }),
+        ).rejects.toThrow('กรุณากรอกรหัสพนักงาน');
+        expect(localEmployeesRepo.save).not.toHaveBeenCalled();
+        expect(usersRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('rejects a wrong employee code instead of creating a duplicate', async () => {
+        const { service, localEmployeesRepo } = makeService();
+
+        await expect(
+          service.completeEmployeeProfile(1, { employeeCode: '99999999', fullName: 'มาเบล สุดสวยเทสเทสเทส' }),
+        ).rejects.toThrow('รหัสพนักงานไม่ตรง');
+        expect(localEmployeesRepo.save).not.toHaveBeenCalled();
+      });
+    });
+
     it('creates the employee without a code when employeeCode is left blank', async () => {
       const user = { userId: 1, employeeId: null, email: 'new.person@millimedthailand.com' };
       const usersRepo = {
@@ -538,7 +603,9 @@ describe('AuthService', () => {
       const createdEmployee = { employeeId: 43, employeeCode: null, fullName: 'สมหญิง ใจดี' };
       const queryBuilder = {
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([]),
       };
       const localEmployeesRepo = {
@@ -581,7 +648,7 @@ describe('AuthService', () => {
         findOne: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockReturnValue(createdEmployee),
         save: jest.fn().mockResolvedValue(createdEmployee),
-        createQueryBuilder: jest.fn(),
+        createQueryBuilder: jest.fn().mockReturnValue(unclaimedEmployeesQb()),
       } as any;
       const localNotificationsService = { notify: jest.fn() } as any;
       const localPreassignments = { consumeForEmployee: jest.fn().mockResolvedValue([2, 4]) } as any;
@@ -603,7 +670,8 @@ describe('AuthService', () => {
 
       expect(result).toEqual({ success: true });
       expect(localPreassignments.consumeForEmployee).toHaveBeenCalledWith('preassigned@millimedthailand.com', 45);
-      expect(localEmployeesRepo.createQueryBuilder).not.toHaveBeenCalled();
+      // เรียกแค่ครั้งเดียวตอนเช็คชื่อซ้ำ — ไม่ได้ไปหา it_admin เพื่อแจ้งให้กำหนดสิทธิ์
+      expect(localEmployeesRepo.createQueryBuilder).toHaveBeenCalledTimes(1);
       expect(localNotificationsService.notify).not.toHaveBeenCalled();
     });
 
@@ -618,9 +686,12 @@ describe('AuthService', () => {
         findOne: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockReturnValue(createdEmployee),
         save: jest.fn().mockResolvedValue(createdEmployee),
-        createQueryBuilder: jest.fn().mockImplementation(() => {
-          throw new Error('db unavailable');
-        }),
+        createQueryBuilder: jest
+          .fn()
+          .mockReturnValueOnce(unclaimedEmployeesQb())
+          .mockImplementation(() => {
+            throw new Error('db unavailable');
+          }),
       } as any;
       const localNotificationsService = { notify: jest.fn() } as any;
       const service = new AuthService(
@@ -658,9 +729,8 @@ describe('AuthService', () => {
         create: jest.fn().mockReturnValue(createdEmployee),
         save: jest.fn().mockResolvedValue(createdEmployee),
         createQueryBuilder: jest.fn().mockReturnValue({
+          ...unclaimedEmployeesQb(),
           innerJoin: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          getMany: jest.fn().mockResolvedValue([]),
         }),
       } as any;
       const newDepartment = { departmentId: 77, departmentName: 'คลังสินค้า' };
@@ -708,9 +778,8 @@ describe('AuthService', () => {
         create: jest.fn().mockReturnValue(createdEmployee),
         save: jest.fn().mockResolvedValue(createdEmployee),
         createQueryBuilder: jest.fn().mockReturnValue({
+          ...unclaimedEmployeesQb(),
           innerJoin: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          getMany: jest.fn().mockResolvedValue([]),
         }),
       } as any;
       const existingDepartment = { departmentId: 12, departmentName: 'IT' };
@@ -875,5 +944,17 @@ describe('AuthService#completeEmployeeProfile (claiming an employee HR created b
   it('rejects when HR recorded a different email for that employee', async () => {
     const { service } = build({ ...hrCreated(), email: 'someone.else@millimedthailand.com' });
     await expect(service.completeEmployeeProfile(1, { employeeCode: 'EMP-0099', fullName: 'พนักงาน ใหม่' })).rejects.toThrow(ConflictException);
+  });
+
+  describe('normalizeEmployeeName', () => {
+    it('ignores Thai/English title prefixes, spacing and case', () => {
+      expect(normalizeEmployeeName('นางสาว มาเบล สุดสวย')).toBe(normalizeEmployeeName('มาเบล  สุดสวย'));
+      expect(normalizeEmployeeName('น.ส.มาเบล สุดสวย')).toBe('มาเบลสุดสวย');
+      expect(normalizeEmployeeName('Mr. John Smith')).toBe('johnsmith');
+    });
+
+    it('does not strip English prefixes that are part of the name itself', () => {
+      expect(normalizeEmployeeName('Missy Lee')).toBe('missylee');
+    });
   });
 });

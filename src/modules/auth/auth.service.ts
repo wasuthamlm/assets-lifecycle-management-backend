@@ -36,6 +36,19 @@ export interface CurrentUserPayload {
   mustChangePassword: boolean;
 }
 
+/**
+ * เทียบชื่อพนักงานแบบหลวมๆ — HR กับตัวพนักงานมักพิมพ์ไม่เหมือนกันเป๊ะ (มี/ไม่มีคำนำหน้า, เว้นวรรคไม่เท่ากัน)
+ * ใช้ได้เพราะการผูกข้อมูลยังต้องตรงรหัสพนักงานด้วยเสมอ ชื่ออย่างเดียวไม่พอให้ผูก
+ */
+export function normalizeEmployeeName(name: string | null | undefined): string {
+  return (name ?? '')
+    .trim()
+    .toLowerCase()
+    // คำนำหน้าไทยมักพิมพ์ติดชื่อ ส่วนอังกฤษต้องตามด้วยจุด/ช่องว่าง ไม่งั้น "Missy" จะโดนตัดเหลือ "y"
+    .replace(/^(?:นางสาว|นาง|นาย|น\.ส\.|ด\.ช\.|ด\.ญ\.|(?:mrs|mr|ms|miss)(?:\.|\s))\s*/u, '')
+    .replace(/\s+/g, '');
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -229,6 +242,16 @@ export class AuthService {
       return this.claimEmployee(existingCode, user, dto);
     }
 
+    // ไม่กรอกรหัส (หรือกรอกผิด) แต่ HR สร้างข้อมูลชื่อนี้ไว้รอแล้ว — ถ้าปล่อยผ่านจะได้ employee ซ้ำ และอุปกรณ์/ใบเบิก
+    // ที่ HR ทำไว้ให้ไปค้างอยู่ที่แถวเดิม ไม่ผูกให้เองจากชื่ออย่างเดียว (ชื่อซ้ำ/สวมรอยได้) ต้องให้ยืนยันด้วยรหัสก่อน
+    if (await this.hasUnclaimedEmployeeNamed(dto.fullName, user)) {
+      throw new ConflictException(
+        employeeCode
+          ? 'รหัสพนักงานไม่ตรงกับข้อมูลที่ HR บันทึกไว้ให้คุณ กรุณาตรวจสอบรหัสพนักงานกับ HR อีกครั้ง'
+          : 'พบข้อมูลพนักงานชื่อนี้ที่ HR บันทึกไว้แล้ว กรุณากรอกรหัสพนักงานที่ได้รับจาก HR เพื่อผูกข้อมูลเดิม',
+      );
+    }
+
     const departmentId = await this.resolveDepartmentId(dto);
 
     const employee = await this.employeesRepo.save(
@@ -259,11 +282,26 @@ export class AuthService {
    * ต้องตรงทั้งรหัสและชื่อ กันคนเดารหัสพนักงานแล้วสวมรอยเอาข้อมูล/อุปกรณ์ของคนอื่น
    */
   private async canClaimEmployee(employee: Employee, user: User, dto: CompleteEmployeeProfileDto): Promise<boolean> {
-    const normalizeName = (name: string | null | undefined) => (name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
-    if (normalizeName(employee.fullName) !== normalizeName(dto.fullName)) return false;
+    if (normalizeEmployeeName(employee.fullName) !== normalizeEmployeeName(dto.fullName)) return false;
     if (employee.email && employee.email.toLowerCase() !== user.email?.toLowerCase()) return false;
     const owner = await this.usersRepo.findOne({ where: { employeeId: employee.employeeId } });
     return !owner;
+  }
+
+  /**
+   * มี employee ชื่อนี้ที่ยังไม่มีบัญชีไหนผูก และอีเมลว่าง/ตรงกับบัญชีนี้ไหม (เงื่อนไขเดียวกับ canClaimEmployee ยกเว้นรหัส)
+   * เทียบชื่อใน JS เพราะต้องตัดคำนำหน้า/ช่องว่างแบบเดียวกับ normalizeEmployeeName — แถวที่ไม่มีบัญชีผูกมีไม่มาก
+   */
+  private async hasUnclaimedEmployeeNamed(fullName: string, user: User): Promise<boolean> {
+    const target = normalizeEmployeeName(fullName);
+    if (!target) return false;
+    const candidates = await this.employeesRepo
+      .createQueryBuilder('e')
+      .leftJoin(User, 'u', 'u.employeeId = e.employeeId')
+      .where('u.userId IS NULL')
+      .andWhere('(e.email IS NULL OR lower(e.email) = :email)', { email: (user.email ?? '').toLowerCase() })
+      .getMany();
+    return candidates.some((e) => normalizeEmployeeName(e.fullName) === target);
   }
 
   private async claimEmployee(employee: Employee, user: User, dto: CompleteEmployeeProfileDto) {

@@ -106,7 +106,7 @@ export class RequisitionsService {
     const newEmployee = dto.newEmployee
       ? {
           ...dto.newEmployee,
-          employeeCode: dto.newEmployee.employeeCode.trim(),
+          employeeCode: dto.newEmployee.employeeCode?.trim() || undefined,
           fullName: dto.newEmployee.fullName.trim(),
           email: dto.newEmployee.email?.trim().toLowerCase() || undefined,
         }
@@ -118,7 +118,12 @@ export class RequisitionsService {
       if (!currentUser.permissions.includes('requisition.create_on_behalf')) {
         throw new ForbiddenException('พนักงานทั่วไปเบิก/ยืมได้เฉพาะให้ตัวเองเท่านั้น — การเบิกให้พนักงานใหม่ต้องทำโดย HR / IT admin');
       }
-      const sameCode = await this.employeeRepo.findOne({ where: { employeeCode: newEmployee.employeeCode } });
+      if (!newEmployee.employeeCode && !newEmployee.email) {
+        throw new BadRequestException('กรุณากรอกรหัสพนักงานหรืออีเมลบริษัทอย่างน้อยหนึ่งอย่าง เพื่อใช้ผูกบัญชีตอนพนักงานเข้าสู่ระบบครั้งแรก');
+      }
+      const sameCode = newEmployee.employeeCode
+        ? await this.employeeRepo.findOne({ where: { employeeCode: newEmployee.employeeCode } })
+        : null;
       if (sameCode) {
         throw new ConflictException(`รหัสพนักงาน ${newEmployee.employeeCode} มีในระบบแล้ว — เลือกจากรายชื่อพนักงานแทน`);
       }
@@ -214,7 +219,7 @@ export class RequisitionsService {
       if (newEmployee) {
         const employee = await manager.save(
           manager.create(Employee, {
-            employeeCode: newEmployee.employeeCode,
+            employeeCode: newEmployee.employeeCode ?? null,
             fullName: newEmployee.fullName,
             departmentId: newEmployee.departmentId,
             position: newEmployee.position,

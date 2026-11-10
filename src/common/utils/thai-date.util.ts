@@ -1,4 +1,4 @@
-const THAI_TIMEZONE = 'Asia/Bangkok';
+export const THAI_TIMEZONE = 'Asia/Bangkok';
 
 /**
  * แปลง Date เป็นวันที่ปฏิทิน (YYYY-MM-DD) ตามเวลาไทยเสมอ ไม่ว่า process/container จะตั้ง TZ เป็นอะไรก็ตาม

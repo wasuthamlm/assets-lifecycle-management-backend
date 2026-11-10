@@ -94,6 +94,15 @@ describe('SupportTicketsService#create', () => {
     expect(t.reporterInfo.phone).toBe('1234');
   });
 
+  it('stores a typed device name when no held asset is picked, and drops it when one is', async () => {
+    const { service } = buildService({ manager: buildManager({ employee: EMPLOYEE, assignment: { assignmentId: 55 } }) });
+    const typed = await service.create({ locationDetail: 'ชั้น 3', category: TicketCategory.HARDWARE, subject: 'x', assetText: '  ปริ้นเตอร์ส่วนกลาง ชั้น 3  ' }, employeeUser);
+    expect(typed.assetText).toBe('ปริ้นเตอร์ส่วนกลาง ชั้น 3');
+    expect(typed.assetId).toBeNull();
+    const picked = await service.create({ locationDetail: 'ชั้น 3', category: TicketCategory.HARDWARE, subject: 'x', assetId: 9, assetText: 'NB-001' }, employeeUser);
+    expect(picked.assetText).toBeNull();
+  });
+
   it('links the open borrow/assignment when the reporter holds the asset (borrowed HDMI case)', async () => {
     const { service } = buildService({ manager: buildManager({ employee: EMPLOYEE, assignment: { assignmentId: 55 } }) });
     const t = await service.create({ locationDetail: 'ชั้น 3 ห้องบัญชี', category: TicketCategory.ACCESSORY, subject: 'สาย HDMI เสียบไม่ได้', assetId: 9 }, employeeUser);

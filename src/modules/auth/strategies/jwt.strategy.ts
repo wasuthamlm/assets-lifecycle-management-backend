@@ -5,27 +5,16 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-
-interface ValidatedUser {
-  userId: number;
-  username: string;
-  employeeId: number | null;
-  permissions: string[];
-  roles: string[];
-  mustChangePassword: boolean;
-}
-
-const CACHE_TTL_MS = 30_000;
+import { CachedAuthUser as ValidatedUser, PermissionCacheService } from '../../roles-permissions/permission-cache.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  // แคชผลลัพธ์ของ validate() ต่อ userId สั้นๆ กันการ join 4 ชั้น (employee->role->rolePermission->permission)
-  // ทุก request — ยอมรับ permission/isActive เพี้ยนได้สูงสุด 30 วินาทีหลังถูกแก้ที่ต้นทาง
-  private cache = new Map<number, { value: ValidatedUser; expiresAt: number }>();
-
+  // ผลลัพธ์ของ validate() แคชไว้ใน PermissionCacheService (TTL 30s) — การเปลี่ยน role/สิทธิ์ล้างแคชให้ทันที
+  // ส่วนอื่นที่ไม่ได้ล้าง (เช่น isActive) ยังเพี้ยนได้สูงสุด 30 วินาทีหลังถูกแก้ที่ต้นทาง
   constructor(
     config: ConfigService,
     @InjectRepository(User) private usersRepo: Repository<User>,
+    private permissionCache: PermissionCacheService,
   ) {
     super({
       // ต้องรับ token จาก query param ด้วย เพราะ browser EventSource (ใช้กับ /notifications/stream)
@@ -43,8 +32,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   // AuthService.loginWithSso() แลก Supabase token เป็น JWT ของระบบเราเองใน issueTokens() ก่อนแล้ว
   // ที่นี่จึงไม่ต้องรู้จัก/verify Supabase token เลย (ดู AuthService.loginWithSso, SupabaseIdentityService)
   async validate(payload: { sub: number; username: string }): Promise<ValidatedUser> {
-    const cached = this.cache.get(payload.sub);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    const cached = this.permissionCache.get(payload.sub);
+    if (cached) return cached;
 
     const user = await this.usersRepo.findOne({
       where: { userId: payload.sub },
@@ -69,12 +58,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       roles: Array.from(roles),
       mustChangePassword: user.mustChangePassword,
     };
-    this.cache.set(payload.sub, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+    this.permissionCache.set(value);
     return value;
   }
 
   /** เรียกตอนเปลี่ยนรหัสผ่าน/สิทธิ์ ไม่งั้น mustChangePassword/permissions อาจ stale ได้นานสุด 30s */
   invalidate(userId: number) {
-    this.cache.delete(userId);
+    this.permissionCache.invalidateUser(userId);
   }
 }
