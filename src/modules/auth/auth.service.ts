@@ -220,7 +220,8 @@ export class AuthService {
       throw new ConflictException('บัญชีนี้ผูกกับข้อมูลพนักงานอยู่แล้ว กรุณาติดต่อผู้ดูแลระบบหากต้องการแก้ไข');
     }
 
-    const existingCode = await this.employeesRepo.findOne({ where: { employeeCode: dto.employeeCode } });
+    const employeeCode = dto.employeeCode?.trim() || null;
+    const existingCode = employeeCode ? await this.employeesRepo.findOne({ where: { employeeCode } }) : null;
     if (existingCode) {
       if (!(await this.canClaimEmployee(existingCode, user, dto))) {
         throw new ConflictException('รหัสพนักงานนี้ถูกใช้ไปแล้ว');
@@ -232,7 +233,7 @@ export class AuthService {
 
     const employee = await this.employeesRepo.save(
       this.employeesRepo.create({
-        employeeCode: dto.employeeCode,
+        employeeCode,
         fullName: dto.fullName,
         departmentId,
         position: dto.position,
@@ -285,7 +286,7 @@ export class AuthService {
     await this.notifyAdminsOfNewEmployeeProfile(
       employee,
       appliedRoles > 0 ? 'พนักงานใหม่เข้าสู่ระบบแล้ว' : 'มีพนักงานใหม่รอกำหนดสิทธิ์',
-      `${employee.fullName} (${employee.employeeCode}) login ครั้งแรกด้วย ${user.email} และผูกกับข้อมูลพนักงานที่ HR สร้างไว้แล้ว` +
+      `${employee.fullName} (${employee.employeeCode ?? 'ยังไม่มีรหัสพนักงาน'}) login ครั้งแรกด้วย ${user.email} และผูกกับข้อมูลพนักงานที่ HR สร้างไว้แล้ว` +
         (appliedRoles > 0 ? ' (ได้รับ role ตามที่กำหนดล่วงหน้า)' : ' กรุณาตรวจสอบและกำหนดบทบาท/สิทธิ์ให้'),
     );
 
@@ -319,7 +320,7 @@ export class AuthService {
   private async notifyAdminsOfNewEmployeeProfile(
     employee: Employee,
     title = 'มีพนักงานใหม่รอกำหนดสิทธิ์',
-    message = `${employee.fullName} (${employee.employeeCode}) กรอกข้อมูลพนักงานของตัวเองเสร็จแล้วหลัง login ครั้งแรก กรุณากำหนดบทบาท/สิทธิ์ให้`,
+    message = `${employee.fullName} (${employee.employeeCode ?? 'ยังไม่มีรหัสพนักงาน'}) กรอกข้อมูลพนักงานของตัวเองเสร็จแล้วหลัง login ครั้งแรก กรุณากำหนดบทบาท/สิทธิ์ให้`,
   ) {
     try {
       const admins = await this.employeesRepo

@@ -529,6 +529,47 @@ describe('AuthService', () => {
       );
     });
 
+    it('creates the employee without a code when employeeCode is left blank', async () => {
+      const user = { userId: 1, employeeId: null, email: 'new.person@millimedthailand.com' };
+      const usersRepo = {
+        findOne: jest.fn().mockResolvedValue(user),
+        save: jest.fn().mockImplementation((u) => Promise.resolve(u)),
+      } as any;
+      const createdEmployee = { employeeId: 43, employeeCode: null, fullName: 'สมหญิง ใจดี' };
+      const queryBuilder = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+      const localEmployeesRepo = {
+        findOne: jest.fn(),
+        create: jest.fn().mockReturnValue(createdEmployee),
+        save: jest.fn().mockResolvedValue(createdEmployee),
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      } as any;
+      const service = new AuthService(
+        usersRepo,
+        localEmployeesRepo,
+        jwtService,
+        config,
+        jwtStrategy,
+        mailService,
+        allowedDomainsService,
+        supabaseIdentity,
+        notificationsService,
+        departmentsRepo,
+        rolePreassignments,
+      );
+
+      const result = await service.completeEmployeeProfile(1, { employeeCode: '  ', fullName: 'สมหญิง ใจดี' });
+
+      // ไม่มีรหัสก็ไม่ต้องไปหา employee เดิมที่ HR สร้างไว้ด้วยรหัส
+      expect(localEmployeesRepo.findOne).not.toHaveBeenCalled();
+      expect(localEmployeesRepo.create).toHaveBeenCalledWith(expect.objectContaining({ employeeCode: null }));
+      expect(usersRepo.save).toHaveBeenCalledWith(expect.objectContaining({ employeeId: 43 }));
+      expect(result).toEqual({ success: true });
+    });
+
     it('applies pre-assigned roles and skips the "please assign roles" admin notification', async () => {
       const user = { userId: 1, employeeId: null, email: 'preassigned@millimedthailand.com' };
       const usersRepo = {

@@ -8,8 +8,9 @@ export class Employee extends BaseEntity {
   @PrimaryGeneratedColumn({ name: 'employee_id' })
   employeeId: number;
 
-  @Column({ unique: true })
-  employeeCode: string;
+  // null ได้ — พนักงานที่กรอกโปรไฟล์เองตอน login SSO ครั้งแรกอาจยังไม่มีรหัส HR ค่อยเติมให้ทีหลัง
+  @Column({ type: 'varchar', unique: true, nullable: true })
+  employeeCode: string | null;
 
   @Column()
   fullName: string;

@@ -2,10 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CompleteEmployeeProfileDto {
-  @ApiProperty({ example: 'EMP-0001' })
+  // ไม่บังคับ — login ด้วยอีเมลบริษัทครั้งแรกอาจยังไม่รู้รหัส HR เติมให้ทีหลังได้ (ส่งค่าว่างมาถือว่าไม่ได้กรอก)
+  @ApiPropertyOptional({ example: 'EMP-0001' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  employeeCode: string;
+  employeeCode?: string;
 
   @ApiProperty({ example: 'สมชาย ใจดี' })
   @IsString()
