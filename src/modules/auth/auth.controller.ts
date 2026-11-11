@@ -10,6 +10,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SsoExchangeDto } from './dto/sso-exchange.dto';
 import { CompleteEmployeeProfileDto } from './dto/complete-employee-profile.dto';
+import { UpdateMyEmployeeProfileDto } from './dto/update-my-employee-profile.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AllowPendingPasswordChange } from '@common/decorators/allow-pending-password-change.decorator';
@@ -93,5 +94,12 @@ export class AuthController {
   @Post('me/employee-profile')
   completeEmployeeProfile(@CurrentUser() user, @Body() dto: CompleteEmployeeProfileDto) {
     return this.authService.completeEmployeeProfile(user.userId, dto);
+  }
+
+  // แก้ข้อมูลพนักงานของตัวเองทีหลัง (หน้า "บัญชีของฉัน") — ทำกับบัญชีตัวเองเท่านั้น ไม่ต้องมี @RequirePermissions
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('me/employee-profile')
+  updateMyEmployeeProfile(@CurrentUser() user, @Body() dto: UpdateMyEmployeeProfileDto) {
+    return this.authService.updateMyEmployeeProfile(user.userId, dto);
   }
 }

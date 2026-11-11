@@ -14,6 +14,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SsoExchangeDto } from './dto/sso-exchange.dto';
 import { CompleteEmployeeProfileDto } from './dto/complete-employee-profile.dto';
+import { UpdateMyEmployeeProfileDto } from './dto/update-my-employee-profile.dto';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailService } from '../mail/mail.service';
 import { AllowedDomainsService } from '../allowed-domains/allowed-domains.service';
@@ -138,7 +139,7 @@ export class AuthService {
    * แต่ permissions/roles ว่างเปล่าจนกว่าจะกรอกโปรไฟล์ (completeEmployeeProfile) หรือ admin ผูก employeeId ให้
    *
    * user เดิมที่ยังไม่มี employeeId จะถูกลอง auto-link ใหม่ทุกครั้งที่ login เผื่อ HR เพิ่งสร้าง employee อีเมลนี้ทีหลัง
-   * และทุกครั้งที่ผูก employee สำเร็จจะใส่ role ที่ admin กำหนดล่วงหน้าให้อีเมลนี้ไว้ (RolePreassignmentsService)
+   * และทุกครั้งที่ผูก employee สำเร็จจะใส่ role เริ่มต้นให้ (role ที่กำหนดล่วงหน้า หรือ employee — ดู applyInitialRoles)
    *
    * ครอบ try/catch unique-violation ไว้ เพราะ login รอบแรกอาจมีหลาย request มาพร้อมกัน (frontend ยิงซ้ำ)
    */
@@ -161,7 +162,7 @@ export class AuthService {
       }
 
       const saved = dirty ? await this.usersRepo.save(existing) : existing;
-      if (lateEmployee && lateEmployeeFree) await this.applyPreassignedRoles(saved, email, lateEmployee.employeeId);
+      if (lateEmployee && lateEmployeeFree) await this.applyInitialRoles(saved, email, lateEmployee.employeeId);
       return saved;
     }
 
@@ -182,7 +183,7 @@ export class AuthService {
 
     try {
       const saved = await this.usersRepo.save(toSave);
-      if (employee) await this.applyPreassignedRoles(saved, email, employee.employeeId);
+      if (employee) await this.applyInitialRoles(saved, email, employee.employeeId);
       return saved;
     } catch (err) {
       if (err?.code !== PG_UNIQUE_VIOLATION) throw err;
@@ -202,18 +203,29 @@ export class AuthService {
   }
 
   /**
-   * ใส่ role ที่ admin กำหนดล่วงหน้าให้อีเมลนี้ (ถ้ามี) หลังผูก employee สำเร็จ คืนจำนวน role ที่ใส่ไป
+   * ใส่ role เริ่มต้นให้หลังผูก employee สำเร็จ: ใช้ role ที่ admin กำหนดล่วงหน้าให้อีเมลนี้ก่อน ('preassigned')
+   * ถ้าไม่มีกำหนดไว้ใส่ role "employee" ให้อัตโนมัติ ('default' — คนที่เป็น HR/IT แจ้ง IT ให้เปลี่ยนเอง)
+   * 'none' = ไม่ได้ใส่อะไร (มี role อยู่แล้ว หรือพัง)
    * best-effort: การผูก employee สำเร็จไปแล้ว ห้ามให้ขั้นนี้พังแล้วทำให้ login/กรอกโปรไฟล์ล้มทั้งหมด —
    * ถ้าพังก็แค่ไม่ได้ role อัตโนมัติ admin ยังกำหนดเองทีหลังได้เหมือนเดิม
    */
-  private async applyPreassignedRoles(user: User, email: string | null, employeeId: number): Promise<number> {
+  private async applyInitialRoles(
+    user: User,
+    email: string | null,
+    employeeId: number,
+  ): Promise<'preassigned' | 'default' | 'none'> {
     try {
       const applied = await this.rolePreassignments.consumeForEmployee(email, employeeId);
-      if (applied.length) this.jwtStrategy.invalidate(user.userId);
-      return applied.length;
+      const result = applied.length
+        ? 'preassigned'
+        : (await this.rolePreassignments.assignDefaultRole(employeeId))
+          ? 'default'
+          : 'none';
+      if (result !== 'none') this.jwtStrategy.invalidate(user.userId);
+      return result;
     } catch (err) {
-      this.logger.warn(`ใส่ role ที่กำหนดล่วงหน้าให้ ${email} ไม่สำเร็จ: ${(err as Error).message}`);
-      return 0;
+      this.logger.warn(`ใส่ role เริ่มต้นให้ ${email} ไม่สำเร็จ: ${(err as Error).message}`);
+      return 'none';
     }
   }
 
@@ -223,7 +235,7 @@ export class AuthService {
    * ดู EmployeesController.update สำหรับแก้ไขข้อมูลพนักงานที่มีอยู่แล้ว ซึ่งต้องมีสิทธิ์ employee.update)
    *
    * ข้อมูลที่ user กรอกเองไม่มีผลต่อสิทธิ์เลย — role ที่ได้มาจากที่ admin กำหนดล่วงหน้าผูกกับอีเมลของบัญชี
-   * (อีเมลที่ Azure AD ยืนยันแล้ว ไม่ใช่ที่ user พิมพ์) ถ้าไม่มีกำหนดไว้ก็ยังต้องรอ admin assign role ให้ทีหลังเหมือนเดิม
+   * (อีเมลที่ Azure AD ยืนยันแล้ว ไม่ใช่ที่ user พิมพ์) ถ้าไม่มีกำหนดไว้จะได้ role "employee" อัตโนมัติ (ดู applyInitialRoles)
    * กรอกข้อมูลผิดจึงมีผลแค่ข้อมูล HR คลาดเคลื่อน ไม่กระทบสิทธิ์การเข้าถึง
    */
   async completeEmployeeProfile(userId: number, dto: CompleteEmployeeProfileDto) {
@@ -269,10 +281,58 @@ export class AuthService {
     await this.usersRepo.save(user);
     this.jwtStrategy.invalidate(userId);
 
-    // มี role กำหนดล่วงหน้าแล้วก็ไม่ต้องรบกวน admin ให้มากำหนดสิทธิ์อีก
-    const appliedRoles = await this.applyPreassignedRoles(user, user.email, employee.employeeId);
-    if (appliedRoles === 0) await this.notifyAdminsOfNewEmployeeProfile(employee);
+    // มี role กำหนดล่วงหน้าแล้วก็ไม่ต้องรบกวน admin อีก — ได้ role employee อัตโนมัติยังแจ้ง IT ไว้ เผื่อเป็น HR/IT ต้องเปลี่ยน role
+    const roleResult = await this.applyInitialRoles(user, user.email, employee.employeeId);
+    if (roleResult === 'default') {
+      await this.notifyAdminsOfNewEmployeeProfile(
+        employee,
+        'พนักงานใหม่เข้าสู่ระบบแล้ว',
+        `${employee.fullName} (${employee.employeeCode ?? 'ยังไม่มีรหัสพนักงาน'}) login ครั้งแรกและได้รับบทบาท "พนักงาน" อัตโนมัติ หากเป็น HR หรือ IT กรุณาเปลี่ยนบทบาทให้`,
+      );
+    } else if (roleResult === 'none') {
+      await this.notifyAdminsOfNewEmployeeProfile(employee);
+    }
 
+    return { success: true };
+  }
+
+  /**
+   * พนักงานแก้ข้อมูลของตัวเองทีหลัง (หน้า "บัญชีของฉัน") — ต่างจาก completeEmployeeProfile ที่ทำได้ครั้งเดียวตอนยังไม่มี employee
+   * แก้ได้แค่เบอร์/ตำแหน่ง/แผนก ส่วนรหัสพนักงานเติมได้เฉพาะตอนยังว่าง (ข้ามตอนกรอกโปรไฟล์ครั้งแรก) มีแล้วต้องให้ HR แก้
+   * ไม่แตะ role/สิทธิ์ — ข้อมูลพวกนี้ไม่มีผลกับการเข้าถึง
+   */
+  async updateMyEmployeeProfile(userId: number, dto: UpdateMyEmployeeProfileDto) {
+    const user = await this.usersRepo.findOne({ where: { userId } });
+    if (!user) throw new UnauthorizedException();
+    const employee = user.employeeId ? await this.employeesRepo.findOne({ where: { employeeId: user.employeeId } }) : null;
+    if (!employee) throw new BadRequestException('บัญชีนี้ยังไม่มีข้อมูลพนักงาน กรุณากรอกข้อมูลพนักงานก่อน');
+
+    const employeeCode = dto.employeeCode?.trim();
+    if (employeeCode && employeeCode !== employee.employeeCode) {
+      if (employee.employeeCode) {
+        throw new ConflictException('มีรหัสพนักงานอยู่แล้ว หากต้องการแก้ไขกรุณาติดต่อ HR');
+      }
+      if (await this.employeesRepo.findOne({ where: { employeeCode } })) {
+        throw new ConflictException('รหัสพนักงานนี้ถูกใช้ไปแล้ว หากเป็นรหัสของคุณกรุณาติดต่อ HR');
+      }
+      employee.employeeCode = employeeCode;
+    }
+
+    if (dto.phone !== undefined) employee.phone = dto.phone.trim() || (null as unknown as string);
+    if (dto.position !== undefined) employee.position = dto.position.trim() || (null as unknown as string);
+    if (dto.newDepartmentName?.trim()) {
+      employee.departmentId = (await this.resolveDepartmentId({ newDepartmentName: dto.newDepartmentName }))!;
+    } else if (dto.departmentId !== undefined) {
+      employee.departmentId = dto.departmentId as number;
+    }
+
+    try {
+      await this.employeesRepo.save(employee);
+    } catch (err) {
+      // อีกคนเติมรหัสเดียวกันไปพร้อมกันพอดี
+      if (err?.code === PG_UNIQUE_VIOLATION) throw new ConflictException('รหัสพนักงานนี้ถูกใช้ไปแล้ว');
+      throw err;
+    }
     return { success: true };
   }
 
@@ -319,13 +379,18 @@ export class AuthService {
     await this.usersRepo.save(user);
     this.jwtStrategy.invalidate(user.userId);
 
-    const appliedRoles = await this.applyPreassignedRoles(user, user.email, employee.employeeId);
+    const roleResult = await this.applyInitialRoles(user, user.email, employee.employeeId);
+    const roleNote = {
+      preassigned: ' (ได้รับ role ตามที่กำหนดล่วงหน้า)',
+      default: ' (ได้รับบทบาท "พนักงาน" อัตโนมัติ หากเป็น HR หรือ IT กรุณาเปลี่ยนบทบาทให้)',
+      none: ' กรุณาตรวจสอบบทบาท/สิทธิ์',
+    }[roleResult];
     // แจ้ง admin ทุกครั้งที่ผูกกับข้อมูลเดิม ให้ตรวจได้ว่าผูกถูกคน
     await this.notifyAdminsOfNewEmployeeProfile(
       employee,
-      appliedRoles > 0 ? 'พนักงานใหม่เข้าสู่ระบบแล้ว' : 'มีพนักงานใหม่รอกำหนดสิทธิ์',
+      'พนักงานใหม่เข้าสู่ระบบแล้ว',
       `${employee.fullName} (${employee.employeeCode ?? 'ยังไม่มีรหัสพนักงาน'}) login ครั้งแรกด้วย ${user.email} และผูกกับข้อมูลพนักงานที่ HR สร้างไว้แล้ว` +
-        (appliedRoles > 0 ? ' (ได้รับ role ตามที่กำหนดล่วงหน้า)' : ' กรุณาตรวจสอบและกำหนดบทบาท/สิทธิ์ให้'),
+        roleNote,
     );
 
     return { success: true };
@@ -335,7 +400,9 @@ export class AuthService {
    * ถ้า user พิมพ์แผนกใหม่มา (newDepartmentName) — reuse แผนกที่ชื่อตรงกันอยู่แล้ว (ไม่สนตัวพิมพ์เล็กใหญ่/เว้นวรรคหัวท้าย
    * กันสร้างซ้ำซ้อนเวลาหลายคนพิมพ์ชื่อเดียวกัน) ถ้าไม่เจอค่อยสร้างใหม่ — ให้ความสำคัญกว่า departmentId ที่ส่งมาด้วยกัน
    */
-  private async resolveDepartmentId(dto: CompleteEmployeeProfileDto): Promise<number | undefined> {
+  private async resolveDepartmentId(
+    dto: Pick<CompleteEmployeeProfileDto, 'departmentId' | 'newDepartmentName'>,
+  ): Promise<number | undefined> {
     const name = dto.newDepartmentName?.trim();
     if (!name) return dto.departmentId;
 
@@ -351,7 +418,7 @@ export class AuthService {
 
   /**
    * แจ้งเตือนคนที่มี role it_admin (ผู้ดูแลระบบ IT) ว่ามี user กรอกข้อมูลพนักงานของตัวเองเสร็จแล้ว
-   * เพื่อเตือนให้ไปกำหนด role ให้ต่อ — ไม่งั้น user คนนี้ login เข้ามาได้แต่ permissions ยังว่างเปล่าอยู่ดี
+   * เพื่อให้ตรวจ/เปลี่ยน role ต่อ (เช่น ได้ role employee อัตโนมัติแต่จริงๆ เป็น HR/IT)
    * (ดู completeEmployeeProfile) best-effort เหมือน NotificationsService.notify() เอง ห้ามให้ล้มเหลวตรงนี้
    * ทำให้การผูก employee ที่สำเร็จไปแล้วก่อนหน้ากลายเป็น error กับ caller
    */

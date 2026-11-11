@@ -113,4 +113,44 @@ describe('RolePreassignmentsService', () => {
       expect(manager.delete).toHaveBeenCalledWith(expect.anything(), { rolePreassignmentId: 7 });
     });
   });
+
+  describe('assignDefaultRole', () => {
+    function makeDefaultRoleService(hasRole: boolean, role: unknown = { roleId: 4, roleName: 'employee' }) {
+      const insertQb: any = {};
+      insertQb.insert = jest.fn(() => insertQb);
+      insertQb.into = jest.fn(() => insertQb);
+      insertQb.values = jest.fn(() => insertQb);
+      insertQb.orIgnore = jest.fn(() => insertQb);
+      insertQb.execute = jest.fn().mockResolvedValue(undefined);
+      const dataSource = {
+        getRepository: jest.fn(() => ({ exists: jest.fn().mockResolvedValue(hasRole) })),
+        createQueryBuilder: jest.fn(() => insertQb),
+      };
+      const roleRepo = { findOne: jest.fn().mockResolvedValue(role) };
+      const { service } = makeService({ dataSource, roleRepo });
+      return { service, insertQb, roleRepo };
+    }
+
+    it('gives the employee role to someone with no roles yet', async () => {
+      const { service, insertQb, roleRepo } = makeDefaultRoleService(false);
+
+      await expect(service.assignDefaultRole(5)).resolves.toBe(true);
+      expect(roleRepo.findOne).toHaveBeenCalledWith({ where: { roleName: 'employee' } });
+      expect(insertQb.values).toHaveBeenCalledWith(expect.objectContaining({ employeeId: 5, roleId: 4 }));
+    });
+
+    it('leaves employees that already have a role untouched', async () => {
+      const { service, insertQb } = makeDefaultRoleService(true);
+
+      await expect(service.assignDefaultRole(5)).resolves.toBe(false);
+      expect(insertQb.execute).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the employee role does not exist', async () => {
+      const { service, insertQb } = makeDefaultRoleService(false, null);
+
+      await expect(service.assignDefaultRole(5)).resolves.toBe(false);
+      expect(insertQb.execute).not.toHaveBeenCalled();
+    });
+  });
 });

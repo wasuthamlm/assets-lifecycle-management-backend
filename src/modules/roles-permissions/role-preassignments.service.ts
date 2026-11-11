@@ -9,6 +9,9 @@ import { User } from '../users/entities/user.entity';
 import { UpsertRolePreassignmentDto } from './dto/upsert-role-preassignment.dto';
 import { AllowedDomainsService } from '../allowed-domains/allowed-domains.service';
 
+/** role ที่ผู้ใช้ใหม่ได้อัตโนมัติตอนใช้งานครั้งแรก — ดู assignDefaultRole */
+const DEFAULT_ROLE_NAME = 'employee';
+
 /**
  * กำหนด role ล่วงหน้าให้อีเมลบริษัท — แทน flow "pre-register" เดิมที่สร้างบัญชี + รหัสผ่านชั่วคราวให้
  * ซึ่งสับสนกับการ login ผ่าน Microsoft SSO ตรงนี้ไม่สร้างทั้ง user และ employee แค่จำไว้ว่าอีเมลนี้ควรได้ role อะไร
@@ -104,5 +107,28 @@ export class RolePreassignmentsService {
     });
 
     return roleIds;
+  }
+
+  /**
+   * ใส่ role "employee" (พนักงานทั่วไป) ให้คนที่เพิ่งใช้งานระบบครั้งแรกโดยไม่ต้องรอ admin — เรียกเมื่อไม่มี role
+   * กำหนดล่วงหน้าไว้ (consumeForEmployee คืนว่าง) ใส่ให้เฉพาะ employee ที่ยังไม่มี role เลย กันไปเพิ่ม employee
+   * ทับคนที่ admin กำหนดสิทธิ์ไว้แล้ว (เช่น HR สร้างข้อมูลไว้ แล้ว IT ให้ role hr ก่อนเจ้าตัว login)
+   * คนที่เป็น HR/IT จริงให้แจ้ง IT ไปเปลี่ยน role เอาเอง คืน true ถ้าใส่ให้จริง
+   */
+  async assignDefaultRole(employeeId: number): Promise<boolean> {
+    const hasRole = await this.dataSource.getRepository(EmployeeRole).exists({ where: { employeeId } });
+    if (hasRole) return false;
+
+    const role = await this.roleRepo.findOne({ where: { roleName: DEFAULT_ROLE_NAME } });
+    if (!role) return false;
+
+    await this.dataSource
+      .createQueryBuilder()
+      .insert()
+      .into(EmployeeRole)
+      .values({ employeeId, roleId: role.roleId, assignedDate: new Date() })
+      .orIgnore()
+      .execute();
+    return true;
   }
 }
