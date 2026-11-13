@@ -16,6 +16,8 @@ import { Requisition } from '../requisitions/entities/requisition.entity';
 import { RequisitionsModule } from '../requisitions/requisitions.module';
 import { LineBorrowService } from './line-borrow.service';
 import { LineStaffService } from './line-staff.service';
+import { Attachment } from '../attachments/entities/attachment.entity';
+import { StorageModule } from '../storage/storage.module';
 import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity';
 
 /**
@@ -24,7 +26,8 @@ import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity'
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee, SupportTicket, Asset, Requisition, LineLinkCode, LineLinkAttempt]),
+    TypeOrmModule.forFeature([User, Employee, SupportTicket, Asset, Requisition, LineLinkCode, LineLinkAttempt, Attachment]),
+    StorageModule,
     LineCoreModule,
     AuthModule,
     SupportTicketsModule,

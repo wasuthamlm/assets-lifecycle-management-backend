@@ -1,8 +1,10 @@
 import { HttpException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ApprovalStatus, AssetStatus, RequestType, TicketSource } from '@common/enums';
 import { Asset } from '../assets/entities/asset.entity';
+import { Attachment } from '../attachments/entities/attachment.entity';
+import { SupabaseStorageService } from '../storage/supabase-storage.service';
 import { Employee } from '../employees/entities/employee.entity';
 import { Requisition } from '../requisitions/entities/requisition.entity';
 import { RequisitionsService } from '../requisitions/requisitions.service';
@@ -28,6 +30,8 @@ export interface BorrowUser {
 const ASSETS_PER_PAGE = 9; // carousel ได้สูงสุด 12 — เหลือที่ให้การ์ด "ดูเพิ่ม"
 const LINE_REASON = 'ส่งคำขอผ่าน LINE';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const LINE_IMAGE_TYPES = ['image/jpeg', 'image/png'];
+const IMAGE_URL_TTL_SECONDS = 7 * 24 * 3600;
 
 /** วันที่ปัจจุบันตามเวลาไทยแบบ YYYY-MM-DD (process TZ เป็น UTC) */
 export function bangkokToday(now = new Date(), addDays = 0): string {
@@ -52,6 +56,8 @@ export class LineBorrowService {
     @InjectRepository(Asset) private assets: Repository<Asset>,
     @InjectRepository(Employee) private employees: Repository<Employee>,
     @InjectRepository(Requisition) private requisitionRepo: Repository<Requisition>,
+    @InjectRepository(Attachment) private attachments: Repository<Attachment>,
+    private storage: SupabaseStorageService,
   ) {}
 
   async handle(user: BorrowUser, params: URLSearchParams, webUrl?: string): Promise<LineMessage[]> {
@@ -66,7 +72,11 @@ export class LineBorrowService {
     // ขั้นที่เหลือต้องมีเครื่องที่เลือกเสมอ — ตรวจซ้ำทุกครั้งว่ายังว่างและผู้ใช้มีสิทธิ์ขอหมวดนี้
     const asset = await this.loadSelectableAsset(user, num(params.get('as')));
     if (typeof asset === 'string') return [textMessage(asset, true)];
-    const summary: BorrowSummary = { assetName: asset.assetName, assetNo: asset.assetNo };
+    const summary: BorrowSummary = { assetName: asset.assetName };
+    // รูปแสดงเฉพาะการ์ดเลือกประเภทและการ์ดยืนยัน — ขั้นอื่นไม่ต้องเสียเวลาขอ signed URL
+    if (action === 'ba' || action === 'bt' || action === 'bp') {
+      summary.imageUrl = (await this.assetImageUrls([asset.assetId])).get(asset.assetId) ?? null;
+    }
 
     if (action === 'ba') {
       return [borrowTypeMessage(summary, asset.assetId, bangkokToday(new Date(), 1), bangkokToday(new Date(), 7))];
@@ -138,7 +148,7 @@ export class LineBorrowService {
   private async assetPage(user: BorrowUser, categoryId: number, page: number): Promise<LineMessage> {
     const rows = await this.assets.find({
       where: { categoryId, currentStatus: AssetStatus.IN_STOCK },
-      relations: { category: { parent: true } },
+      relations: { category: { parent: true }, currentLocation: true },
       order: { assetName: 'ASC', assetId: 'ASC' },
       skip: (page - 1) * ASSETS_PER_PAGE,
       take: ASSETS_PER_PAGE + 1,
@@ -148,7 +158,49 @@ export class LineBorrowService {
     if (!this.canRequestHrOnly(user) && isHrOnly(rows[0])) {
       return textMessage(`"${category.categoryName}" ต้องให้ HR เป็นผู้ทำรายการเบิก/ยืมให้ กรุณาติดต่อ HR`, true);
     }
-    return borrowAssetsMessage(category.categoryName, categoryId, rows.slice(0, ASSETS_PER_PAGE), page, rows.length > ASSETS_PER_PAGE);
+    const shown = rows.slice(0, ASSETS_PER_PAGE);
+    const images = await this.assetImageUrls(shown.map((a) => a.assetId));
+    return borrowAssetsMessage(
+      category.categoryName,
+      categoryId,
+      shown.map((a) => ({
+        assetId: a.assetId,
+        assetName: a.assetName,
+        brand: a.brand,
+        model: a.model,
+        locationName: a.currentLocation?.locationName,
+        imageUrl: images.get(a.assetId) ?? null,
+      })),
+      page,
+      rows.length > ASSETS_PER_PAGE,
+    );
+  }
+
+  /**
+   * รูปแรกที่อัปโหลดไว้ของแต่ละทรัพย์สิน (attachments referenceType = 'asset' — หน้าเพิ่มทรัพย์สินบนเว็บ)
+   * bucket เป็น private จึงต้องใช้ signed URL; ตั้งอายุ 7 วันเพราะผู้ใช้อาจเลื่อนกลับมาดูการ์ดเดิมทีหลัง
+   * LINE แสดงได้เฉพาะ jpeg/png; ขอ URL ไม่สำเร็จก็แค่ไม่มีรูป ไม่ทำให้ flow พัง
+   */
+  private async assetImageUrls(assetIds: number[]): Promise<Map<number, string>> {
+    const result = new Map<number, string>();
+    if (!assetIds.length) return result;
+    try {
+      const rows = await this.attachments.find({
+        where: { referenceType: 'asset', referenceId: In(assetIds), mimeType: In(LINE_IMAGE_TYPES) },
+        order: { createdAt: 'ASC', attachmentId: 'ASC' },
+      });
+      const firstPerAsset = new Map<number, string>();
+      for (const r of rows) if (!firstPerAsset.has(r.referenceId)) firstPerAsset.set(r.referenceId, r.fileUrl);
+      await Promise.all(
+        [...firstPerAsset].map(async ([assetId, fileUrl]) => {
+          const url = /^https:\/\//.test(fileUrl) ? fileUrl : await this.storage.createSignedUrl(fileUrl, IMAGE_URL_TTL_SECONDS).catch(() => null);
+          if (url?.startsWith('https://')) result.set(assetId, url);
+        }),
+      );
+    } catch {
+      // ไม่มีรูปก็ยังเบิก/ยืมได้ตามปกติ
+    }
+    return result;
   }
 
   /** คืนข้อความ error เป็น string ถ้าเลือกเครื่องนี้ไม่ได้ */

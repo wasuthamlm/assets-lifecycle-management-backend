@@ -137,10 +137,11 @@ const header = (eyebrow: string, title: string, color: string): FlexNode => ({
   ],
 });
 
-const bubble = (parts: { header?: FlexNode; body: FlexNode[]; footer?: FlexNode[]; size?: string }): FlexNode => ({
+const bubble = (parts: { header?: FlexNode; hero?: FlexNode; body: FlexNode[]; footer?: FlexNode[]; size?: string }): FlexNode => ({
   type: 'bubble',
   size: parts.size ?? 'mega',
   ...(parts.header ? { header: parts.header } : {}),
+  ...(parts.hero ? { hero: parts.hero } : {}),
   body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '18px', contents: parts.body },
   ...(parts.footer?.length
     ? { footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', paddingTop: '0px', contents: parts.footer } }
@@ -433,26 +434,50 @@ export function borrowCategoriesMessage(categories: BorrowCategoryInput[], hrOnl
 export interface BorrowAssetInput {
   assetId: number;
   assetName: string;
-  assetNo: string;
   brand?: string | null;
   model?: string | null;
-  serialNumber?: string | null;
+  locationName?: string | null;
+  /** signed URL ของรูปทรัพย์สิน (https, jpeg/png) — ไม่มีรูปจะแสดงกรอบไอคอนแทน */
+  imageUrl?: string | null;
 }
 
+/**
+ * รูปบนสุดของการ์ดอุปกรณ์ — LINE รับเฉพาะ https + jpeg/png; ไม่มีรูปใช้กรอบสีอ่อนพร้อมไอคอนแทน
+ * ให้การ์ดใน carousel สูงเท่ากันทุกใบ
+ */
+const assetHero = (imageUrl: string | null | undefined): FlexNode =>
+  imageUrl
+    ? { type: 'image', url: imageUrl, size: 'full', aspectRatio: '4:3', aspectMode: 'fit', backgroundColor: '#F8FAFC' }
+    : {
+        type: 'box',
+        layout: 'vertical',
+        height: '150px',
+        backgroundColor: C.borrowSoft,
+        justifyContent: 'center',
+        alignItems: 'center',
+        contents: [
+          text('💻', { size: '3xl', align: 'center', wrap: false }),
+          text('ไม่มีรูป', { size: 'xxs', color: C.faint, align: 'center', wrap: false }),
+        ],
+      };
+
+/** ไม่แสดงรหัสทรัพย์สิน / S/N — ผู้ใช้เลือกจากรูป ยี่ห้อ/รุ่น และที่ตั้งก็พอ (IT เห็นรหัสในเว็บ) */
 export function borrowAssetsMessage(categoryName: string, categoryId: number, assets: BorrowAssetInput[], page: number, hasMore: boolean): LineMessage {
-  const cards: FlexNode[] = assets.map((a) =>
-    bubble({
+  const cards: FlexNode[] = assets.map((a) => {
+    const brandModel = [a.brand, a.model].filter(Boolean).join(' ');
+    return bubble({
       size: 'kilo',
-      header: header(clip(categoryName, 40), clip(a.assetName, 60), C.borrow),
+      hero: assetHero(a.imageUrl),
       body: [
-        row('รหัส', a.assetNo),
-        row('ยี่ห้อ', [a.brand, a.model].filter(Boolean).join(' ') || '-'),
-        row('S/N', a.serialNumber || '-'),
+        text(clip(categoryName, 40), { size: 'xxs', color: C.borrow, weight: 'bold', wrap: false }),
+        text(clip(a.assetName, 60), { weight: 'bold', size: 'md' }),
+        ...(brandModel ? [text(clip(brandModel, 60), { size: 'xs', color: C.sub })] : []),
+        ...(a.locationName ? [text(`📍 ${clip(a.locationName, 50)}`, { size: 'xs', color: C.sub })] : []),
         { type: 'box', layout: 'horizontal', contents: [pill('ว่าง พร้อมใช้', C.ok)] },
       ],
-      footer: [button(postback('เลือกเครื่องนี้', `a=ba&as=${a.assetId}`, `เลือก ${clip(a.assetName, 40)} (${a.assetNo})`), 'primary', C.borrow)],
-    }),
-  );
+      footer: [button(postback('เลือกเครื่องนี้', `a=ba&as=${a.assetId}`, `เลือก ${clip(a.assetName, 60)}`), 'primary', C.borrow)],
+    });
+  });
   if (hasMore) {
     cards.push({
       type: 'bubble',
@@ -471,14 +496,15 @@ export function borrowAssetsMessage(categoryName: string, categoryId: number, as
 
 export interface BorrowSummary {
   assetName: string;
-  assetNo: string;
+  /** รูปอุปกรณ์ที่เลือก แสดงบนการ์ดขั้นถัดไปให้มั่นใจว่าเลือกถูกเครื่อง */
+  imageUrl?: string | null;
   requestType?: RequestType;
   dueDate?: string | null;
   approverName?: string | null;
 }
 
 const summaryRows = (s: BorrowSummary): FlexNode[] => [
-  row('อุปกรณ์', `${s.assetName} (${s.assetNo})`),
+  row('อุปกรณ์', s.assetName),
   ...(s.requestType ? [row('ประเภท', REQUEST_TYPE_LABEL[s.requestType])] : []),
   ...(s.requestType === RequestType.BORROW ? [row('กำหนดคืน', thaiDate(s.dueDate))] : []),
   ...(s.approverName !== undefined ? [row('ผู้อนุมัติ', s.approverName ?? 'อนุมัติอัตโนมัติ')] : []),
@@ -490,6 +516,7 @@ export function borrowTypeMessage(s: BorrowSummary, assetId: number, minDate: st
     'เลือกเบิกหรือยืม',
     bubble({
       header: header('เบิก/ยืมอุปกรณ์ · ขั้นที่ 2/3', 'ยืมชั่วคราว หรือ เบิกใช้ประจำ?', C.borrow),
+      hero: s.imageUrl ? assetHero(s.imageUrl) : undefined,
       body: [
         ...summaryRows(s),
         separator(),
@@ -527,6 +554,7 @@ export function borrowConfirmMessage(s: BorrowSummary, submitData: string): Line
     'ตรวจสอบและยืนยันคำขอ',
     bubble({
       header: header('ตรวจสอบก่อนส่ง', 'ยืนยันคำขอเบิก/ยืม', C.borrow),
+      hero: s.imageUrl ? assetHero(s.imageUrl) : undefined,
       body: summaryRows(s),
       footer: [
         button(postback('✅ ยืนยันส่งคำขอ', submitData, 'ยืนยันส่งคำขอ'), 'primary', C.borrow),

@@ -49,10 +49,11 @@ export class SupabaseStorageService {
     await this.getClient().storage.from(this.bucket).remove([path]);
   }
 
-  async createSignedUrl(path: string): Promise<string> {
+  /** ttlSeconds: ค่าเริ่มต้น 15 นาทีสำหรับหน้าเว็บ — รูปใน LINE Flex ต้องอยู่นานกว่านั้น (ผู้ใช้เปิดแชทดูทีหลัง) */
+  async createSignedUrl(path: string, ttlSeconds = SIGNED_URL_TTL_SECONDS): Promise<string> {
     const { data, error } = await this.getClient()
       .storage.from(this.bucket)
-      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+      .createSignedUrl(path, ttlSeconds);
     if (error || !data) throw new InternalServerErrorException(`สร้างลิงก์ดูไฟล์ไม่สำเร็จ: ${error?.message}`);
     return data.signedUrl;
   }

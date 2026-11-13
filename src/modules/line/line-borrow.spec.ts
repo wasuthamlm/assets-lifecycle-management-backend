@@ -33,7 +33,19 @@ function build(opts: { asset?: any; admins?: any[]; existing?: any; raw?: any[] 
   const requisitions = {
     create: jest.fn().mockResolvedValue({ requisitionId: 99, requisitionNo: 'RQ-6911-0001', overallStatus: ApprovalStatus.PENDING }),
   } as any;
-  return { service: new LineBorrowService(requisitions, assets, employees, requisitionRepo), requisitions };
+  const attachments = {
+    find: jest.fn().mockResolvedValue([
+      { referenceId: 11, fileUrl: 'asset/11/a.jpg', mimeType: 'image/jpeg' },
+      { referenceId: 11, fileUrl: 'asset/11/b.jpg', mimeType: 'image/jpeg' },
+    ]),
+  } as any;
+  const storage = { createSignedUrl: jest.fn(async (path: string) => `https://storage.example.com/${path}?token=x`) } as any;
+  return {
+    service: new LineBorrowService(requisitions, assets, employees, requisitionRepo, attachments, storage),
+    requisitions,
+    storage,
+    assets,
+  };
 }
 
 const p = (s: string) => new URLSearchParams(s);
@@ -55,6 +67,25 @@ describe('LineBorrowService', () => {
     expect(out).toContain('a=bc&c=3');
     expect(out).not.toContain('a=bc&c=2');
     expect(out).toContain('HR');
+  });
+
+  it('asset cards show the first photo and no asset code / serial number', async () => {
+    const { service, storage } = build();
+    const out = json(await service.handle(employee, p('a=bc&c=3')));
+    expect(out).toContain('https://storage.example.com/asset/11/a.jpg');
+    expect(out).not.toContain('b.jpg');
+    expect(out).not.toContain('AS-0011');
+    expect(out).not.toContain('S/N');
+    // signed URL อายุยาวพอให้เปิดดูการ์ดทีหลังได้
+    expect(storage.createSignedUrl).toHaveBeenCalledWith('asset/11/a.jpg', 7 * 24 * 3600);
+  });
+
+  it('a broken image lookup never blocks borrowing', async () => {
+    const { service, storage } = build();
+    storage.createSignedUrl.mockRejectedValue(new Error('storage down'));
+    const out = json(await service.handle(employee, p('a=ba&as=11')));
+    expect(out).toContain('ยืม');
+    expect(out).not.toContain('storage.example.com');
   });
 
   it('re-checks the asset on every step (no longer in stock / HR-only)', async () => {
