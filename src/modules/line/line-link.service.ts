@@ -1,9 +1,10 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { LessThanOrEqual, Not, Repository } from 'typeorm';
 import { Employee } from '../employees/entities/employee.entity';
 import { randomInt } from 'crypto';
 import { LineAuthService } from './line-auth.service';
+import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity';
 
 export const LINK_CODE_TTL_MS = 10 * 60 * 1000;
 const MAX_FAILED_ATTEMPTS = 5;
@@ -14,6 +15,8 @@ export class LineLinkService {
   constructor(
     private lineAuth: LineAuthService,
     @InjectRepository(Employee) private employees: Repository<Employee>,
+    @InjectRepository(LineLinkCode) private codes: Repository<LineLinkCode>,
+    @InjectRepository(LineLinkAttempt) private attempts: Repository<LineLinkAttempt>,
   ) {}
 
   async status(employeeId: number) {
@@ -42,23 +45,24 @@ export class LineLinkService {
 
   /**
    * ผูกผ่านแชทบอท: หน้าโปรไฟล์ขอรหัส 6 หลัก → พนักงานพิมพ์รหัสในแชท OA → linkByCode()
-   * เก็บในหน่วยความจำ (backend รัน instance เดียว) — restart แล้วรหัสหาย แค่ขอใหม่ อายุสั้นอยู่แล้ว
+   * เก็บใน DB (line_link_codes) — ห้ามกลับไปใช้หน่วยความจำ: เว็บกับ webhook อาจเป็นคนละ process
    */
-  private readonly codes = new Map<string, { employeeId: number; expiresAt: number }>();
-  private readonly failedAttempts = new Map<string, { count: number; resetAt: number }>();
-
-  createLinkCode(employeeId: number, now = Date.now()) {
-    // รหัสเดิมของคนนี้ใช้ไม่ได้แล้ว — มีรหัสที่ใช้ได้ทีละอันต่อคน
-    for (const [code, v] of this.codes) {
-      if (v.employeeId === employeeId || v.expiresAt <= now) this.codes.delete(code);
+  async createLinkCode(employeeId: number, now = Date.now()) {
+    // รหัสเดิมของคนนี้ใช้ไม่ได้แล้ว — มีรหัสที่ใช้ได้ทีละอันต่อคน; ถือโอกาสล้างรหัสหมดอายุของทุกคน
+    await this.codes.delete({ employeeId });
+    await this.codes.delete({ expiresAt: LessThanOrEqual(new Date(now)) });
+    const expiresAt = new Date(now + LINK_CODE_TTL_MS);
+    // ชนรหัสของคนอื่น (โอกาสน้อยมาก) → PK ซ้ำ ลองสุ่มใหม่
+    for (let i = 0; i < 5; i++) {
+      const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+      try {
+        await this.codes.insert({ code, employeeId, expiresAt });
+        return { code, expiresAt: expiresAt.toISOString() };
+      } catch (err) {
+        if ((err as { code?: string }).code !== '23505') throw err;
+      }
     }
-    let code: string;
-    do {
-      code = randomInt(0, 1_000_000).toString().padStart(6, '0');
-    } while (this.codes.has(code));
-    const expiresAt = now + LINK_CODE_TTL_MS;
-    this.codes.set(code, { employeeId, expiresAt });
-    return { code, expiresAt: new Date(expiresAt).toISOString() };
+    throw new ServiceUnavailableException('สร้างรหัสไม่สำเร็จ กรุณาลองใหม่');
   }
 
   /**
@@ -70,24 +74,34 @@ export class LineLinkService {
     code: string,
     now = Date.now(),
   ): Promise<'linked' | 'invalid' | 'too_many_attempts'> {
-    const attempts = this.failedAttempts.get(lineUserId);
-    if (attempts && attempts.resetAt > now && attempts.count >= MAX_FAILED_ATTEMPTS) return 'too_many_attempts';
+    const nowDate = new Date(now);
+    const attempts = await this.attempts.findOne({ where: { lineUserId } });
+    const attemptsActive = !!attempts && attempts.resetAt.getTime() > now;
+    if (attemptsActive && attempts.failedCount >= MAX_FAILED_ATTEMPTS) return 'too_many_attempts';
 
-    const entry = this.codes.get(code);
-    if (!entry || entry.expiresAt <= now) {
-      const fresh = !attempts || attempts.resetAt <= now;
-      this.failedAttempts.set(lineUserId, {
-        count: fresh ? 1 : attempts.count + 1,
-        resetAt: fresh ? now + LINK_CODE_TTL_MS : attempts.resetAt,
+    // ลบแล้วได้แถวคืนมา = ใช้รหัสได้ครั้งเดียวแม้กดส่งพร้อมกันสองครั้ง
+    const consumed: { employee_id: number }[] = await this.codes
+      .createQueryBuilder()
+      .delete()
+      .where('code = :code AND expires_at > :now', { code, now: nowDate })
+      .returning(['employee_id'])
+      .execute()
+      .then((r) => r.raw ?? []);
+
+    if (!consumed.length) {
+      await this.attempts.save({
+        lineUserId,
+        failedCount: attemptsActive ? attempts.failedCount + 1 : 1,
+        resetAt: attemptsActive ? attempts.resetAt : new Date(now + LINK_CODE_TTL_MS),
       });
       return 'invalid';
     }
 
-    this.codes.delete(code);
-    this.failedAttempts.delete(lineUserId);
+    const employeeId = consumed[0].employee_id;
+    await this.attempts.delete({ lineUserId });
     // LINE นี้ผูกกับคนอื่นอยู่ (ปกติแชทบอทไม่เรียกในกรณีนี้) → ย้ายมาคนใหม่ เพราะเจ้าของรหัสยืนยันตัวผ่านเว็บแล้ว
-    await this.employees.update({ lineUserId, employeeId: Not(entry.employeeId) }, { lineUserId: null });
-    await this.employees.update({ employeeId: entry.employeeId }, { lineUserId });
+    await this.employees.update({ lineUserId, employeeId: Not(employeeId) }, { lineUserId: null });
+    await this.employees.update({ employeeId }, { lineUserId });
     return 'linked';
   }
 }

@@ -2,52 +2,88 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MoreThan, Repository } from 'typeorm';
 import { extname } from 'path';
-import { TicketCategory, TicketSource, TicketStatus } from '@common/enums';
+import { AssignmentType, TicketCategory, TicketSource, TicketStatus } from '@common/enums';
 import { User } from '../users/entities/user.entity';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { SupportTicketsService } from '../support-tickets/support-tickets.service';
 import { SupportTicket } from '../support-tickets/entities/support-ticket.entity';
+import { RequisitionsService } from '../requisitions/requisitions.service';
+import { Requisition } from '../requisitions/entities/requisition.entity';
+import { AssignmentsService } from '../assignments/assignments.service';
 import { ALLOWED_ATTACHMENT_MIME_TYPES, maxAttachmentSizeBytes } from '../attachments/attachment-upload.config';
 import { LineMessagingService } from './line-messaging.service';
 import { LineLinkService } from './line-link.service';
 import { resolveLineUser } from './line-id-token.guard';
+import { LineBorrowService, bangkokToday } from './line-borrow.service';
+import { LineStaffService } from './line-staff.service';
+import {
+  LineMessage,
+  TICKET_CATEGORY_LABEL,
+  helpMessage,
+  myAssetsMessage,
+  notLinkedMessage,
+  statusOverviewMessage,
+  textMessage,
+  ticketCreatedMessage,
+  ticketPromptMessage,
+} from './line-flex';
 
 /** event จาก webhook เฉพาะส่วนที่ใช้ — https://developers.line.biz/en/reference/messaging-api/#webhook-event-objects */
 export interface LineWebhookEvent {
   type: string;
   replyToken?: string;
   source?: { type: string; userId?: string };
-  message?: { id: string; type: string; text?: string; imageSet?: { id: string; index: number; total: number } };
+  message?: {
+    id: string;
+    type: string;
+    text?: string;
+    markAsReadToken?: string;
+    imageSet?: { id: string; index: number; total: number };
+  };
+  /** กดปุ่มใน rich menu / Flex — params.date มาจากปุ่มเลือกวันที่ (datetimepicker) */
+  postback?: { data: string; params?: { date?: string } };
 }
 
 /** รูปที่ส่งตามมาหลังพิมพ์อาการภายในเวลานี้ จะถูกแนบเข้า ticket ล่าสุดที่แจ้งทางแชท */
 export const ATTACH_WINDOW_MS = 15 * 60 * 1000;
 const SUBJECT_MAX = 80;
 const NO_LOCATION = 'ไม่ได้ระบุ (แจ้งผ่านแชท LINE)';
-const STATUS_LABEL: Record<TicketStatus, string> = {
-  [TicketStatus.OPEN]: 'รอดำเนินการ',
-  [TicketStatus.IN_PROGRESS]: 'กำลังดำเนินการ',
-  [TicketStatus.RESOLVED]: 'แก้ไขแล้ว',
-  [TicketStatus.CLOSED]: 'ปิดงาน',
-  [TicketStatus.CANCELLED]: 'ยกเลิก',
-};
 // ข้อความทักทาย/ตอบรับที่ไม่ควรกลายเป็น ticket
 const SMALL_TALK = new Set(['สวัสดี', 'สวัสดีครับ', 'สวัสดีค่ะ', 'ขอบคุณ', 'ขอบคุณครับ', 'ขอบคุณค่ะ', 'โอเค', 'ok', 'hi', 'hello', 'ครับ', 'ค่ะ', 'คะ', 'จ้า']);
-const HELP_COMMANDS = new Set(['ช่วยเหลือ', 'help', 'วิธีใช้', 'เมนู']);
-const STATUS_COMMANDS = new Set(['สถานะ', 'เรื่องของฉัน', 'ติดตาม', 'status']);
 
-const HELP_TEXT = `พิมพ์อาการที่พบมาได้เลย 1 ข้อความ = 1 เรื่อง
-เช่น "โน้ตบุ๊กเปิดไม่ติด อยู่ชั้น 3 ห้องบัญชี"
-
-📷 ส่งรูปตามมาได้ภายใน 15 นาที ระบบจะแนบให้เรื่องล่าสุด
-📋 พิมพ์ "สถานะ" เพื่อดูเรื่องที่แจ้งไว้`;
-
-const NOT_LINKED_TEXT = `ยังไม่ได้เชื่อมบัญชีพนักงาน
-1. เข้าเว็บระบบทรัพย์สิน → เมนูโปรไฟล์ → "เชื่อมต่อ LINE"
-2. กด "ขอรหัส" แล้วพิมพ์รหัส 6 หลักที่ได้ในแชทนี้`;
+type MenuKey = 'ticket' | 'borrow' | 'status' | 'assets' | 'help';
+// คำที่พิมพ์แทนการกดเมนูได้ (เผื่อเครื่องที่ไม่เห็น rich menu เช่น LINE บน PC)
+const TEXT_COMMANDS: Record<string, MenuKey> = {
+  ช่วยเหลือ: 'help',
+  help: 'help',
+  วิธีใช้: 'help',
+  เมนู: 'help',
+  menu: 'help',
+  สถานะ: 'status',
+  เรื่องของฉัน: 'status',
+  ติดตาม: 'status',
+  ติดตามสถานะ: 'status',
+  status: 'status',
+  แจ้งปัญหา: 'ticket',
+  'แจ้งปัญหา it': 'ticket',
+  แจ้งซ่อม: 'ticket',
+  เบิก: 'borrow',
+  ยืม: 'borrow',
+  เบิกยืม: 'borrow',
+  'เบิก/ยืม': 'borrow',
+  'เบิก/ยืมอุปกรณ์': 'borrow',
+  อุปกรณ์ของฉัน: 'assets',
+  ของที่ยืม: 'assets',
+};
+const BORROW_ACTIONS = new Set(['bc', 'ba', 'bt', 'bp', 'bs', 'bx']);
+// ปุ่มของเจ้าหน้าที่ IT ในการ์ดงานที่ถูก push มา (ดู LineStaffService)
+const STAFF_ACTIONS = new Set(['sa', 'sr', 'ra']);
 
 /**
- * แชทบอทแจ้งปัญหา IT: พิมพ์อาการ 1 ข้อความ → เปิด ticket (หมวด "อื่นๆ" ให้ IT จัดหมวดเอง) แล้วตอบเลขที่กลับ
+ * แชทบอทฝ่าย IT: rich menu (สร้างด้วย scripts/line-rich-menu.mjs) → postback → ตอบเป็น Flex
+ * - แจ้งปัญหา: พิมพ์อาการ 1 ข้อความ → เปิด ticket (หมวด "อื่นๆ" แล้วให้เลือกประเภทจาก quick reply ได้)
+ * - เบิก/ยืม: ดู LineBorrowService
+ * - เจ้าหน้าที่ IT: งานใหม่/ใบขอถูก push เข้า LINE พร้อมปุ่มรับงาน/อนุมัติ — ดู LineStaffService
  * ทุกการตอบใช้ reply API (ฟรี) — push ใช้เฉพาะตอนสถานะ ticket เปลี่ยน (ดู SupportTicketsService)
  * ห้าม throw ออกไป: webhook ตอบ 200 ให้ LINE ไปแล้ว error ตรงนี้ไม่มีใครรับ
  */
@@ -62,6 +98,10 @@ export class LineChatService {
     private jwtStrategy: JwtStrategy,
     @InjectRepository(User) private users: Repository<User>,
     @InjectRepository(SupportTicket) private ticketRepo: Repository<SupportTicket>,
+    private borrow: LineBorrowService,
+    private requisitions: RequisitionsService,
+    private assignments: AssignmentsService,
+    private staff: LineStaffService,
   ) {}
 
   async handleEvents(events: LineWebhookEvent[]): Promise<void> {
@@ -75,47 +115,98 @@ export class LineChatService {
     }
   }
 
+  private get webUrl() {
+    return this.messaging.webUrl;
+  }
+
   private async handleEvent(event: LineWebhookEvent): Promise<void> {
     const lineUserId = event.source?.userId;
     const replyToken = event.replyToken;
     // แชทกลุ่ม/ห้อง ไม่รองรับ — ต้องคุย 1:1 กับ OA เพื่อรู้ว่าใครแจ้ง
     if (!lineUserId || !replyToken || event.source?.type !== 'user') return;
-    const reply = (...texts: string[]) => this.messaging.reply(replyToken, texts);
+    // ขึ้น "อ่านแล้ว" ทันที — ถ้า OA เปิดโหมด Chat ข้อความจะไม่ถูกอ่านอัตโนมัติ
+    if (event.message?.markAsReadToken) void this.messaging.markAsRead(event.message.markAsReadToken);
+    const send = (...messages: LineMessage[]) => this.messaging.replyMessages(replyToken, messages);
 
     const user = await this.resolveUser(lineUserId);
 
     if (event.type === 'follow') {
-      return reply(user ? `ยินดีต้อนรับกลับมา คุณ${user.fullName}\n\n${HELP_TEXT}` : `สวัสดีครับ นี่คือช่องทางแจ้งปัญหา IT\n\n${NOT_LINKED_TEXT}`);
+      return send(user ? helpMessage(user.fullName, this.webUrl) : notLinkedMessage(this.webUrl));
+    }
+
+    if (!user) {
+      if (event.type === 'postback') return send(notLinkedMessage(this.webUrl));
+      if (event.type !== 'message' || !event.message) return;
+      const text = event.message.type === 'text' ? (event.message.text ?? '').trim() : '';
+      if (!/^\d{6}$/.test(text)) return send(notLinkedMessage(this.webUrl));
+      const result = await this.linkService.linkByCode(lineUserId, text);
+      if (result === 'too_many_attempts') return send(textMessage('ใส่รหัสผิดหลายครั้งเกินไป กรุณารอ 10 นาทีแล้วขอรหัสใหม่'));
+      if (result === 'invalid') return send(textMessage('รหัสไม่ถูกต้องหรือหมดอายุแล้ว กรุณาขอรหัสใหม่จากหน้าโปรไฟล์ในเว็บ'));
+      const linked = await this.resolveUser(lineUserId);
+      return send(textMessage('✅ เชื่อมบัญชีเรียบร้อย'), helpMessage(linked?.fullName ?? null, this.webUrl));
+    }
+
+    if (user.mustChangePassword) return send(textMessage('กรุณาเข้าเว็บเพื่อเปลี่ยนรหัสผ่านก่อน จึงจะใช้งานผ่าน LINE ได้'));
+
+    if (event.type === 'postback' && event.postback) {
+      return send(...(await this.handlePostback(user, lineUserId, event.postback)));
     }
     if (event.type !== 'message' || !event.message) return;
 
     const { message } = event;
-    if (!user) {
-      const text = message.type === 'text' ? (message.text ?? '').trim() : '';
-      if (!/^\d{6}$/.test(text)) return reply(NOT_LINKED_TEXT);
-      const result = await this.linkService.linkByCode(lineUserId, text);
-      if (result === 'too_many_attempts') return reply('ใส่รหัสผิดหลายครั้งเกินไป กรุณารอ 10 นาทีแล้วขอรหัสใหม่');
-      if (result === 'invalid') return reply('รหัสไม่ถูกต้องหรือหมดอายุแล้ว กรุณาขอรหัสใหม่จากหน้าโปรไฟล์ในเว็บ');
-      const linked = await this.resolveUser(lineUserId);
-      return reply(`✅ เชื่อมบัญชีเรียบร้อย${linked ? ` คุณ${linked.fullName}` : ''}\n\n${HELP_TEXT}`);
-    }
-
-    if (user.mustChangePassword) return reply('กรุณาเข้าเว็บเพื่อเปลี่ยนรหัสผ่านก่อน จึงจะแจ้งปัญหาผ่าน LINE ได้');
-
-    if (message.type === 'text') return this.handleText(user, (message.text ?? '').trim(), reply);
-    if (message.type === 'image') return this.handleImage(user, message, reply);
-    return reply('ตอนนี้รองรับเฉพาะข้อความและรูปภาพครับ\n\n' + HELP_TEXT);
+    if (message.type === 'text') return send(...(await this.handleText(user, lineUserId, (message.text ?? '').trim())));
+    if (message.type === 'image') return this.handleImage(user, message, (...t) => this.messaging.reply(replyToken, t));
+    return send(textMessage('ตอนนี้รองรับเฉพาะข้อความและรูปภาพครับ', true));
   }
 
-  private async handleText(user: ChatUser, text: string, reply: (...t: string[]) => Promise<void>) {
+  private async handlePostback(
+    user: ChatUser,
+    lineUserId: string,
+    postback: NonNullable<LineWebhookEvent['postback']>,
+  ): Promise<LineMessage[]> {
+    const params = new URLSearchParams(postback.data);
+    if (postback.params?.date) params.set('date', postback.params.date);
+    const action = params.get('a') ?? '';
+
+    if (action === 'menu') return this.menu(user, params.get('m') as MenuKey);
+    if (action === 'tc') return [await this.setTicketCategory(user, Number(params.get('id')), params.get('c'))];
+    if (action === 'noop') return [textMessage('ยกเลิกแล้วครับ')];
+    if (STAFF_ACTIONS.has(action)) {
+      void this.messaging.showLoading(lineUserId, 5);
+      return this.staff.handle(user, params, this.webUrl);
+    }
+    if (BORROW_ACTIONS.has(action)) {
+      void this.messaging.showLoading(lineUserId, 5);
+      return this.borrow.handle(user, params, this.webUrl);
+    }
+    return [helpMessage(user.fullName, this.webUrl)];
+  }
+
+  private async menu(user: ChatUser, key: MenuKey): Promise<LineMessage[]> {
+    switch (key) {
+      case 'ticket':
+        return [ticketPromptMessage()];
+      case 'borrow':
+        return this.borrow.handle(user, new URLSearchParams({ a: 'menu' }), this.webUrl);
+      case 'status':
+        return [await this.statusOverview(user)];
+      case 'assets':
+        return [await this.myAssets(user)];
+      default:
+        return [helpMessage(user.fullName, this.webUrl)];
+    }
+  }
+
+  private async handleText(user: ChatUser, lineUserId: string, text: string): Promise<LineMessage[]> {
     const normalized = text.toLowerCase();
-    if (HELP_COMMANDS.has(normalized)) return reply(HELP_TEXT);
-    if (STATUS_COMMANDS.has(normalized)) return reply(await this.statusText(user));
-    if (/^\d{6}$/.test(text)) return reply('บัญชีนี้เชื่อมกับพนักงานเรียบร้อยแล้ว พิมพ์อาการที่พบมาได้เลย');
-    if (text.length < 5 || SMALL_TALK.has(normalized)) return reply(HELP_TEXT);
+    const command = TEXT_COMMANDS[normalized];
+    if (command) return this.menu(user, command);
+    if (/^\d{6}$/.test(text)) return [textMessage('บัญชีนี้เชื่อมกับพนักงานเรียบร้อยแล้ว พิมพ์อาการที่พบมาได้เลย', true)];
+    if (text.length < 5 || SMALL_TALK.has(normalized)) return [helpMessage(user.fullName, this.webUrl)];
 
-    if (!user.permissions.includes('ticket.create')) return reply('บัญชีของคุณไม่มีสิทธิ์แจ้งปัญหา กรุณาติดต่อฝ่าย IT');
+    if (!user.permissions.includes('ticket.create')) return [textMessage('บัญชีของคุณไม่มีสิทธิ์แจ้งปัญหา กรุณาติดต่อฝ่าย IT')];
 
+    void this.messaging.showLoading(lineUserId, 10);
     const firstLine = text.split('\n')[0].trim();
     const subject = firstLine.length > SUBJECT_MAX ? `${firstLine.slice(0, SUBJECT_MAX - 1)}…` : firstLine;
     const ticket = await this.tickets.create(
@@ -123,8 +214,59 @@ export class LineChatService {
       { employeeId: user.employeeId, permissions: user.permissions },
       { source: TicketSource.LINE, notifyReporter: false },
     );
-    return reply(
-      `✅ รับเรื่องแล้ว เลขที่ ${ticket.ticketNo}\nเรื่อง: ${ticket.subject}\n\n📷 มีรูปประกอบ ส่งตามมาได้เลย (ภายใน 15 นาที)\nทีม IT จะแจ้งความคืบหน้าทางแชทนี้`,
+    return [ticketCreatedMessage(ticket, this.webUrl)];
+  }
+
+  /**
+   * ผู้แจ้งเลือกประเภทจาก quick reply หลังเปิด ticket — data มาจาก client จึงอัปเดตเฉพาะ ticket ของตัวเอง
+   * ที่แจ้งทาง LINE และยังรอดำเนินการอยู่ (IT รับเรื่อง/จัดหมวดแล้วจะไม่ไปทับ)
+   */
+  private async setTicketCategory(user: ChatUser, ticketId: number, category: string | null): Promise<LineMessage> {
+    const valid = (Object.values(TicketCategory) as string[]).includes(category ?? '') && category !== TicketCategory.OTHER;
+    if (!Number.isInteger(ticketId) || ticketId <= 0 || !valid) return textMessage('ข้อมูลไม่ถูกต้อง', true);
+    const result = await this.ticketRepo.update(
+      { ticketId, reportedBy: user.employeeId, source: TicketSource.LINE, status: TicketStatus.OPEN },
+      { category: category as TicketCategory },
+    );
+    if (!result.affected) return textMessage('เปลี่ยนประเภทไม่ได้แล้ว (IT อาจรับเรื่องไปแล้ว)', true);
+    return textMessage(`👍 บันทึกประเภท "${TICKET_CATEGORY_LABEL[category as TicketCategory]}" แล้ว`, true);
+  }
+
+  private async statusOverview(user: ChatUser): Promise<LineMessage> {
+    const canSeeRequisitions = user.permissions.includes('requisition.create') || user.permissions.includes('requisition.view_own');
+    const [tickets, requisitions] = await Promise.all([
+      this.tickets.findMine(user.employeeId, { page: 1, limit: 5 }),
+      canSeeRequisitions
+        ? this.requisitions.findMine(user.employeeId, { page: 1, limit: 5 })
+        : Promise.resolve({ data: [] as Requisition[] }),
+    ]);
+    return statusOverviewMessage(
+      tickets.data,
+      requisitions.data.map((r) => ({
+        requisitionId: r.requisitionId,
+        requisitionNo: r.requisitionNo,
+        requestType: r.requestType,
+        overallStatus: r.overallStatus,
+        dueDate: r.dueDate,
+        assetNames: (r.items ?? []).map((i) => i.asset?.assetName).filter((n): n is string => !!n),
+      })),
+      this.webUrl,
+    );
+  }
+
+  private async myAssets(user: ChatUser): Promise<LineMessage> {
+    const rows = await this.assignments.findMine(user.employeeId);
+    return myAssetsMessage(
+      rows.map((a) => ({
+        assetName: a.asset?.assetName ?? '-',
+        assetNo: a.asset?.assetNo ?? '-',
+        serialNumber: a.asset?.serialNumber,
+        categoryName: a.asset?.category?.categoryName,
+        isLoan: a.assignmentType === AssignmentType.TEMPORARY_LOAN,
+        dueDate: a.dueDate,
+        issuedDate: a.issuedDate,
+      })),
+      bangkokToday(),
     );
   }
 
@@ -161,13 +303,6 @@ export class LineChatService {
     if (!set || set.index === set.total) {
       return reply(`📎 แนบรูป${set ? ` ${set.total} รูป` : ''}เข้าเรื่อง ${ticket.ticketNo} แล้ว`);
     }
-  }
-
-  private async statusText(user: ChatUser): Promise<string> {
-    const { data } = await this.tickets.findMine(user.employeeId, { page: 1, limit: 5 });
-    if (!data.length) return 'คุณยังไม่มีเรื่องที่แจ้งไว้';
-    const lines = data.map((t) => `• ${t.ticketNo} — ${STATUS_LABEL[t.status]}\n  ${t.subject}`);
-    return `เรื่องล่าสุดของคุณ\n\n${lines.join('\n\n')}`;
   }
 
   /** null = ยังไม่ผูก หรือบัญชีถูกระงับ/ไม่มีข้อมูลพนักงาน (ถือว่าใช้แชทไม่ได้เหมือนกัน) */

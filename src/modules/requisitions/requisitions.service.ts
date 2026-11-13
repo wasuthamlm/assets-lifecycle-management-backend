@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Raw, Repository } from 'typeorm';
 import { Requisition, RequisitionDocumentInfo } from './entities/requisition.entity';
@@ -9,9 +9,15 @@ import { Asset } from '../assets/entities/asset.entity';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { ApproveRequisitionDto } from './dto/approve-requisition.dto';
 import { QueryRequisitionDto } from './dto/query-requisition.dto';
-import { ApprovalStatus, AssetStatus, AssignmentType, HolderType, NotificationType, RequestType } from '@common/enums';
+import { ApprovalStatus, AssetStatus, AssignmentType, HolderType, NotificationType, RequestType, TicketSource } from '@common/enums';
 import { generateSequentialNumber } from '@common/utils/sequential-number.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LineMessagingService } from '../line/line-messaging.service';
+import {
+  RequisitionCardInput,
+  requisitionResultMessage,
+  staffRequisitionApprovalMessage,
+} from '../line/line-flex';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { AssignmentsService } from '../assignments/assignments.service';
 import { renderRequisitionDocumentHtml } from './requisition-document.template';
@@ -50,6 +56,8 @@ export class RequisitionsService {
     private notifications: NotificationsService,
     private attachments: AttachmentsService,
     private assignments: AssignmentsService,
+    // @Optional — test เดิมสร้าง service โดยไม่ส่งตัวนี้ และไม่ตั้ง LINE ก็ต้องทำงานได้ตามปกติ
+    @Optional() private lineMessaging?: LineMessagingService,
   ) {}
 
   // เลขที่เอกสารแยก sequence กันคนละ prefix ตามประเภทคำขอ — เบิก (withdraw) รันเลขแยกจากยืม (borrow)
@@ -99,7 +107,12 @@ export class RequisitionsService {
     };
   }
 
-  async create(dto: CreateRequisitionDto, currentUser: { employeeId: number; permissions: string[] }) {
+  /** source ไม่ได้มาจาก DTO — client ปลอมเป็น LINE ไม่ได้ เฉพาะ LineBorrowService (แชทที่ตรวจลายเซ็นแล้ว) ส่ง LINE เข้ามา */
+  async create(
+    dto: CreateRequisitionDto,
+    currentUser: { employeeId: number; permissions: string[] },
+    opts: { source?: TicketSource } = {},
+  ) {
     // ผู้ขอเบิกคือคนที่ทำรายการเสมอ (HR ที่เบิกให้คนอื่นก็ยังเป็นผู้ขอ) — ส่วนผู้รับทรัพย์สินเก็บแยกใน requestedFor
     const requestedBy = currentUser.employeeId;
     let requestedFor: number | null = null;
@@ -242,6 +255,7 @@ export class RequisitionsService {
         requestType: dto.requestType,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         reason: dto.reason,
+        source: opts.source ?? TicketSource.WEB,
         documentInfo,
         overallStatus: autoApproved ? ApprovalStatus.APPROVED : ApprovalStatus.PENDING,
       });
@@ -290,6 +304,7 @@ export class RequisitionsService {
       'requisition',
       created.requisitionId,
     );
+    if (created.source === TicketSource.LINE) void this.pushApprovalRequest(created.requisitionId, approverIds[0]);
 
     return created;
   }
@@ -510,11 +525,44 @@ export class RequisitionsService {
     await this.notifications.notify(...notifyArgs!);
 
     const result = await this.getByIdOrThrow(id);
+    if (result.source === TicketSource.LINE) {
+      // ยังมีลำดับถัดไป → เด้งให้ผู้อนุมัติคนถัดไป, จบแล้ว → แจ้งผลผู้ขอ
+      if (result.overallStatus === ApprovalStatus.PENDING) void this.pushApprovalRequest(id, notifyArgs![0]);
+      else this.lineMessaging?.pushToEmployee(result.requestedBy, [requisitionResultMessage(toRequisitionCard(result), this.lineMessaging.webUrl)]);
+    }
     if (result.overallStatus === ApprovalStatus.APPROVED) {
       await this.onFullyApproved(result, approverId);
     }
 
     return this.getByIdOrThrow(id);
+  }
+
+  /** การ์ดอนุมัติ/ไม่อนุมัติเข้า LINE ของผู้อนุมัติ (ดู LineStaffService) — best-effort ห้าม throw */
+  private async pushApprovalRequest(requisitionId: number, approverId: number) {
+    if (!this.lineMessaging) return;
+    try {
+      const r = await this.repo.findOne({
+        where: { requisitionId },
+        relations: ['requestedByEmployee', 'requestedByEmployee.department', 'items', 'items.asset', 'items.stockItem', 'approvals'],
+      });
+      if (!r) return;
+      const level = r.approvals.find((a) => a.approverId === approverId && a.status === ApprovalStatus.PENDING);
+      await this.lineMessaging.pushToEmployee(approverId, [
+        staffRequisitionApprovalMessage(
+          {
+            ...toRequisitionCard(r),
+            requesterName: r.requestedByEmployee?.fullName ?? '-',
+            departmentName: r.requestedByEmployee?.department?.departmentName ?? null,
+            reason: r.reason,
+            approvalLevel: level?.approvalLevel,
+            totalLevels: r.approvals.length,
+          },
+          this.lineMessaging.webUrl,
+        ),
+      ]);
+    } catch (err) {
+      this.logger.warn(`ส่งใบขอ ${requisitionId} เข้า LINE ผู้อนุมัติไม่สำเร็จ: ${(err as Error).message}`);
+    }
   }
 
   /** employee_id ของผู้ดูแลระบบ IT (role it_admin) ทั้งหมด — คนเดียวที่เป็นผู้อนุมัติใบขอเบิก/ยืมได้ (ดู create()) */
@@ -584,4 +632,18 @@ export class RequisitionsService {
       }
     }
   }
+}
+
+/** แปลงใบขอเป็นข้อมูลการ์ด LINE */
+function toRequisitionCard(r: Requisition): RequisitionCardInput {
+  return {
+    requisitionId: r.requisitionId,
+    requisitionNo: r.requisitionNo,
+    requestType: r.requestType,
+    overallStatus: r.overallStatus,
+    dueDate: r.dueDate,
+    assetNames: (r.items ?? [])
+      .map((i) => i.asset?.assetName ?? i.stockItem?.itemName)
+      .filter((n): n is string => !!n),
+  };
 }

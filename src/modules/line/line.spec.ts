@@ -28,7 +28,7 @@ describe('LineLinkService', () => {
   const build = (taken: any) => {
     const employees = { findOne: jest.fn().mockResolvedValue(taken), update: jest.fn() } as any;
     const lineAuth = { verifyIdToken: jest.fn().mockResolvedValue('U123') } as any;
-    return { service: new LineLinkService(lineAuth, employees), employees };
+    return { service: new LineLinkService(lineAuth, employees, {} as any, {} as any), employees };
   };
 
   it('links the LINE account to the caller', async () => {

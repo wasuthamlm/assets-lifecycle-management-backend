@@ -11,14 +11,27 @@ import { LineIdTokenGuard } from './line-id-token.guard';
 import { LineLinkController, LineLiffController, LineWebhookController } from './line.controller';
 import { LineChatService } from './line-chat.service';
 import { SupportTicket } from '../support-tickets/entities/support-ticket.entity';
+import { Asset } from '../assets/entities/asset.entity';
+import { Requisition } from '../requisitions/entities/requisition.entity';
+import { RequisitionsModule } from '../requisitions/requisitions.module';
+import { LineBorrowService } from './line-borrow.service';
+import { LineStaffService } from './line-staff.service';
+import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity';
 
 /**
  * แจ้งปัญหา IT ผ่าน LINE OA — หน้า LIFF (ใน frontend repo) เรียก /line/liff/* ด้วย LINE ID token
  * และแชทบอท: พิมพ์อาการในแชท OA → webhook /line/webhook (ตรวจลายเซ็นด้วย channel secret) → เปิด ticket
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Employee, SupportTicket]), LineCoreModule, AuthModule, SupportTicketsModule, AssignmentsModule],
+  imports: [
+    TypeOrmModule.forFeature([User, Employee, SupportTicket, Asset, Requisition, LineLinkCode, LineLinkAttempt]),
+    LineCoreModule,
+    AuthModule,
+    SupportTicketsModule,
+    AssignmentsModule,
+    RequisitionsModule,
+  ],
   controllers: [LineLinkController, LineLiffController, LineWebhookController],
-  providers: [LineLinkService, LineIdTokenGuard, LineChatService],
+  providers: [LineLinkService, LineIdTokenGuard, LineChatService, LineBorrowService, LineStaffService],
 })
 export class LineModule {}

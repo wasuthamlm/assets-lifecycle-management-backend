@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { SupportTicket, TicketReporterInfo } from './entities/support-ticket.entity';
@@ -14,6 +14,7 @@ import { HolderType, NotificationType, TicketPriority, TicketSource, TicketStatu
 import { NotificationsService } from '../notifications/notifications.service';
 import { RepairsService } from '../repairs/repairs.service';
 import { AttachmentsService } from '../attachments/attachments.service';
+import { LineMessage, staffNewTicketMessage, ticketStatusMessage } from '../line/line-flex';
 import { LineMessagingService } from '../line/line-messaging.service';
 import { generateSequentialNumber } from '@common/utils/sequential-number.util';
 import { toThaiDateString } from '@common/utils/thai-date.util';
@@ -42,6 +43,7 @@ const TICKET_STATUS_LABEL: Record<TicketStatus, string> = {
 
 @Injectable()
 export class SupportTicketsService {
+  private readonly logger = new Logger(SupportTicketsService.name);
   private static readonly RELATIONS = ['asset', 'assignment', 'assignedToEmployee', 'repair', 'location'];
 
   constructor(
@@ -136,6 +138,7 @@ export class SupportTicketsService {
       { exclude: [reportedBy] },
     );
     this.publishTicketChange(ticket, 'created');
+    if (source === TicketSource.LINE) void this.pushNewTicketToStaff(ticket);
     // แชทบอทตอบกลับเองด้วย reply API (ฟรี ไม่กินโควตา push) จึงปิดตรงนี้ได้ด้วย notifyReporter: false
     if (opts.notifyReporter !== false) {
       this.pushToReporterIfLine(
@@ -343,16 +346,29 @@ export class SupportTicketsService {
    * แจ้งผู้แจ้งทาง LINE ด้วย เฉพาะ ticket ที่แจ้งมาจาก LINE (ประหยัดโควตา push ของ OA — คนแจ้งทางเว็บก็ดูในเว็บ)
    * ไม่ await — LineMessagingService ไม่ throw อยู่แล้ว และไม่ควรให้ response ของ IT ช้าตาม LINE API
    */
-  private pushToReporterIfLine(ticket: SupportTicket, text: string) {
+  private pushToReporterIfLine(ticket: SupportTicket, content: string | LineMessage[]) {
     if (ticket.source !== TicketSource.LINE || !this.lineMessaging) return;
-    void this.lineMessaging.pushToEmployee(ticket.reportedBy, text);
+    void this.lineMessaging.pushToEmployee(ticket.reportedBy, content);
+  }
+
+  /**
+   * งานที่แจ้งมาจาก LINE → เด้งการ์ด "รับงาน" เข้า LINE ของเจ้าหน้าที่ทุกคนที่มี ticket.manage และผูก LINE แล้ว
+   * (กดรับงานจัดการที่ LineStaffService) — เฉพาะ ticket จาก LINE เพื่อประหยัดโควตา push; ห้าม throw
+   */
+  private async pushNewTicketToStaff(ticket: SupportTicket) {
+    if (!this.lineMessaging) return;
+    try {
+      const staffIds = (await this.notifications.findEmployeeIdsByPermission('ticket.manage')).filter((id) => id !== ticket.reportedBy);
+      await this.lineMessaging.pushToEmployees(staffIds, [staffNewTicketMessage(ticket, this.lineMessaging.webUrl)]);
+    } catch (err) {
+      this.logger.warn(`ส่งงาน ${ticket.ticketNo} เข้า LINE เจ้าหน้าที่ไม่สำเร็จ: ${(err as Error).message}`);
+    }
   }
 
   private async notifyStatusChanged(ticket: SupportTicket) {
     const label = TICKET_STATUS_LABEL[ticket.status];
     const resolutionText = ticket.resolution && ticket.status !== TicketStatus.IN_PROGRESS ? ` — ${ticket.resolution}` : '';
-    this.pushToReporterIfLine(ticket, `📋 ${ticket.ticketNo}: ${label}
-เรื่อง "${ticket.subject}"${resolutionText}`);
+    this.pushToReporterIfLine(ticket, [ticketStatusMessage(ticket, this.lineMessaging?.webUrl)]);
     await this.notifications.notify(
       ticket.reportedBy,
       NotificationType.TICKET_STATUS_UPDATED,

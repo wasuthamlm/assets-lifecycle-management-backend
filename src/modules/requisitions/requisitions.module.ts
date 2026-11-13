@@ -1,3 +1,4 @@
+import { LineCoreModule } from '../line/line-core.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Requisition } from './entities/requisition.entity';
@@ -17,6 +18,7 @@ import { AssignmentsModule } from '../assignments/assignments.module';
     NotificationsModule,
     AttachmentsModule,
     AssignmentsModule,
+    LineCoreModule,
   ],
   controllers: [RequisitionsController],
   providers: [RequisitionsService],

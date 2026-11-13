@@ -15,7 +15,8 @@
     "migration:revert": "npm run typeorm -- migration:revert",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeds/run-seed.ts",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "test": "jest"
+    "test": "jest",
+    "line:richmenu": "node scripts/line-rich-menu.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

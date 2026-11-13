@@ -1,0 +1,83 @@
+<!doctype html>
+<!--
+  ต้นฉบับภาพ rich menu ของ LINE OA (2500×1686) — แก้ไฟล์นี้แล้วสร้าง PNG ใหม่ด้วย:
+    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --hide-scrollbars --force-device-scale-factor=1 --window-size=2500,1686 --screenshot=assets\line\rich-menu.png assets\line\rich-menu.html
+  ตำแหน่งปุ่ม (areas) ใน scripts/line-rich-menu.mjs ต้องตรงกับ grid ด้านล่าง: แถวบน 2 ช่อง สูง 1000, แถวล่าง 3 ช่อง สูง 686
+  ใช้ PIL วาดภาพแทนไม่ได้ — สระ/วรรณยุกต์ไทยจะเพี้ยน
+-->
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 2500px; height: 1686px; overflow: hidden; }
+  body {
+    font-family: 'Leelawadee UI', 'Noto Sans Thai', Tahoma, sans-serif;
+    background: #0B1220;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: 1000px 686px;
+  }
+  .tile { position: relative; padding: 28px; }
+  .big { grid-column: span 3; }
+  .small { grid-column: span 2; }
+  .card {
+    position: relative; width: 100%; height: 100%; border-radius: 56px; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: flex-end; padding: 72px 80px;
+    color: #fff;
+  }
+  .card::after { /* วงแสงตกแต่งมุมขวาบน */
+    content: ''; position: absolute; right: -180px; top: -180px; width: 620px; height: 620px;
+    border-radius: 50%; background: rgba(255,255,255,.10);
+  }
+  .ticket { background: linear-gradient(135deg, #6366F1 0%, #4338CA 100%); }
+  .borrow { background: linear-gradient(135deg, #14B8A6 0%, #0E7490 100%); }
+  .light { background: #162033; color: #E2E8F0; justify-content: center; align-items: center; text-align: center; padding: 40px; }
+  .light::after { display: none; }
+  .icon { width: 230px; height: 230px; border-radius: 60px; background: rgba(255,255,255,.18); display: grid; place-items: center; margin-bottom: 64px; }
+  .icon svg { width: 140px; height: 140px; }
+  .light .icon { width: 190px; height: 190px; border-radius: 52px; margin-bottom: 40px; }
+  .light .icon svg { width: 112px; height: 112px; }
+  .i-status { background: rgba(245,158,11,.16); }
+  .i-assets { background: rgba(56,189,248,.16); }
+  .i-help { background: rgba(167,139,250,.16); }
+  .eyebrow { font-size: 52px; font-weight: 700; letter-spacing: 6px; opacity: .75; margin-bottom: 10px; }
+  .title { font-size: 150px; font-weight: 700; line-height: 1.15; }
+  .desc { font-size: 62px; opacity: .85; margin-top: 18px; }
+  .light .title { font-size: 92px; }
+  .light .desc { font-size: 50px; color: #94A3B8; opacity: 1; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <!-- ซ้ายบน 0,0 1250×1000 -->
+  <div class="tile big"><div class="card ticket">
+    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg></div>
+    <div class="eyebrow">IT SUPPORT</div>
+    <div class="title">แจ้งปัญหา IT</div>
+    <div class="desc">พิมพ์อาการส่งมาได้เลย</div>
+  </div></div>
+  <!-- ขวาบน 1250,0 1250×1000 -->
+  <div class="tile big"><div class="card borrow">
+    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/><path d="M12 7v6m-3-3 3 3 3-3"/></svg></div>
+    <div class="eyebrow">BORROW · REQUEST</div>
+    <div class="title">เบิก/ยืมอุปกรณ์</div>
+    <div class="desc">เลือกเครื่องที่ว่าง ส่งขออนุมัติ</div>
+  </div></div>
+  <!-- ล่าง 3 ช่อง y=1000 สูง 686: 0–833, 833–1667, 1667–2500 -->
+  <div class="tile small"><div class="card light">
+    <div class="icon i-status"><svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v2h6V3"/><path d="m9 12 2 2 4-4"/><path d="M9 17h6"/></svg></div>
+    <div class="title">ติดตามสถานะ</div>
+    <div class="desc">เรื่องที่แจ้ง · คำขอ</div>
+  </div></div>
+  <div class="tile small"><div class="card light">
+    <div class="icon i-assets"><svg viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg></div>
+    <div class="title">อุปกรณ์ของฉัน</div>
+    <div class="desc">ที่ถืออยู่ · กำหนดคืน</div>
+  </div></div>
+  <div class="tile small"><div class="card light">
+    <div class="icon i-help"><svg viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><path d="M12 17.5h.01"/></svg></div>
+    <div class="title">ช่วยเหลือ</div>
+    <div class="desc">วิธีใช้ · เปิดเว็บ</div>
+  </div></div>
+</body>
+</html>

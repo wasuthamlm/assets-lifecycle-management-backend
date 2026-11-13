@@ -39,7 +39,12 @@ function buildManager(found: { employee?: any; assignment?: any; asset?: any; ti
 function buildService(opts: { manager?: any; ticket?: any; attachments?: any; repairs?: any; lineMessaging?: any } = {}) {
   const manager = opts.manager ?? buildManager();
   const repo = { findOne: jest.fn().mockResolvedValue(opts.ticket ?? null) } as any;
-  const notifications = { notify: jest.fn(), notifyByPermission: jest.fn(), publishChange: jest.fn() } as any;
+  const notifications = {
+    notify: jest.fn(),
+    notifyByPermission: jest.fn(),
+    publishChange: jest.fn(),
+    findEmployeeIdsByPermission: jest.fn().mockResolvedValue([1, 2, 7]),
+  } as any;
   const attachments = opts.attachments ?? ({ findByReference: jest.fn().mockResolvedValue([]), saveUpload: jest.fn(), remove: jest.fn() } as any);
   const repairs = opts.repairs ?? ({} as any);
   const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
@@ -220,7 +225,7 @@ describe('SupportTicketsService#escalateToRepair', () => {
 });
 
 describe('SupportTicketsService LINE channel', () => {
-  const lineMessaging = () => ({ pushToEmployee: jest.fn().mockResolvedValue(undefined) });
+  const lineMessaging = () => ({ pushToEmployee: jest.fn().mockResolvedValue(undefined), pushToEmployees: jest.fn().mockResolvedValue(undefined) });
   const dto = { locationDetail: 'ชั้น 3', category: TicketCategory.HARDWARE, subject: 'จอไม่ติด' };
 
   it('defaults source to web and does not push to LINE', async () => {
@@ -240,6 +245,20 @@ describe('SupportTicketsService LINE channel', () => {
     expect(line.pushToEmployee).toHaveBeenCalledWith(7, expect.stringContaining(t.ticketNo));
   });
 
+  it('pushes a "รับงาน" card to IT staff (not the reporter) only for LINE tickets', async () => {
+    const line = lineMessaging();
+    const { service } = buildService({ manager: buildManager({ employee: EMPLOYEE }), lineMessaging: line });
+    await service.create(dto, employeeUser, { source: TicketSource.LINE });
+    await new Promise((r) => setImmediate(r));
+    expect(line.pushToEmployees).toHaveBeenCalledWith([1, 2], [expect.objectContaining({ type: 'flex' })]);
+    expect(JSON.stringify(line.pushToEmployees.mock.calls[0][1])).toContain('a=sa&id=');
+
+    const webLine = lineMessaging();
+    await buildService({ manager: buildManager({ employee: EMPLOYEE }), lineMessaging: webLine }).service.create(dto, employeeUser);
+    await new Promise((r) => setImmediate(r));
+    expect(webLine.pushToEmployees).not.toHaveBeenCalled();
+  });
+
   it('works without LineMessagingService (LINE not configured)', async () => {
     const { service } = buildService({ manager: buildManager({ employee: EMPLOYEE }) });
     await expect(service.create(dto, employeeUser, { source: TicketSource.LINE })).resolves.toBeDefined();
@@ -249,7 +268,8 @@ describe('SupportTicketsService LINE channel', () => {
     const line = lineMessaging();
     const lineTicket = { ticketId: 1, ticketNo: 'IT-2611-0001', subject: 'x', reportedBy: 7, status: TicketStatus.OPEN, source: TicketSource.LINE };
     await buildService({ manager: buildManager({ ticket: lineTicket }), lineMessaging: line }).service.updateStatus(1, { status: TicketStatus.IN_PROGRESS }, 1);
-    expect(line.pushToEmployee).toHaveBeenCalledWith(7, expect.stringContaining('กำลังดำเนินการ'));
+    expect(line.pushToEmployee).toHaveBeenCalledWith(7, [expect.objectContaining({ type: 'flex' })]);
+    expect(JSON.stringify(line.pushToEmployee.mock.calls[0][1])).toContain('กำลังดำเนินการ');
 
     const webLine = lineMessaging();
     const webTicket = { ...lineTicket, status: TicketStatus.OPEN, source: TicketSource.WEB };

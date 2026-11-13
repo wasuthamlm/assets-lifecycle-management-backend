@@ -1,6 +1,6 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from '@common/entities/base.entity';
-import { RequestType, ApprovalStatus } from '@common/enums';
+import { RequestType, ApprovalStatus, TicketSource } from '@common/enums';
 import { Employee } from '../../employees/entities/employee.entity';
 import { RequisitionItem } from './requisition-item.entity';
 import { RequisitionApproval } from './requisition-approval.entity';
@@ -74,6 +74,10 @@ export class Requisition extends BaseEntity {
    */
   @Column({ name: 'document_info', type: 'jsonb', nullable: true })
   documentInfo: RequisitionDocumentInfo | null;
+
+  /** ช่องทางที่ส่งคำขอ — 'line' = ส่งจากแชท LINE OA จะ push แจ้งผู้อนุมัติ/ผลอนุมัติทาง LINE ด้วย */
+  @Column({ type: 'enum', enum: TicketSource, enumName: 'requisitions_source_enum', default: TicketSource.WEB })
+  source: TicketSource;
 
   @OneToMany(() => RequisitionItem, (i) => i.requisition)
   items: RequisitionItem[];
