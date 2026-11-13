@@ -72,7 +72,7 @@ export class LineBorrowService {
     // ขั้นที่เหลือต้องมีเครื่องที่เลือกเสมอ — ตรวจซ้ำทุกครั้งว่ายังว่างและผู้ใช้มีสิทธิ์ขอหมวดนี้
     const asset = await this.loadSelectableAsset(user, num(params.get('as')));
     if (typeof asset === 'string') return [textMessage(asset, true)];
-    const summary: BorrowSummary = { assetName: asset.assetName };
+    const summary: BorrowSummary = { assetName: asset.assetName, serialNumber: asset.serialNumber };
     // รูปแสดงเฉพาะการ์ดเลือกประเภทและการ์ดยืนยัน — ขั้นอื่นไม่ต้องเสียเวลาขอ signed URL
     if (action === 'ba' || action === 'bt' || action === 'bp') {
       summary.imageUrl = (await this.assetImageUrls([asset.assetId])).get(asset.assetId) ?? null;
@@ -169,6 +169,7 @@ export class LineBorrowService {
         brand: a.brand,
         model: a.model,
         locationName: a.currentLocation?.locationName,
+        serialNumber: a.serialNumber,
         imageUrl: images.get(a.assetId) ?? null,
       })),
       page,

@@ -437,6 +437,7 @@ export interface BorrowAssetInput {
   brand?: string | null;
   model?: string | null;
   locationName?: string | null;
+  serialNumber?: string | null;
   /** signed URL ของรูปทรัพย์สิน (https, jpeg/png) — ไม่มีรูปจะแสดงกรอบไอคอนแทน */
   imageUrl?: string | null;
 }
@@ -461,7 +462,7 @@ const assetHero = (imageUrl: string | null | undefined): FlexNode =>
         ],
       };
 
-/** ไม่แสดงรหัสทรัพย์สิน / S/N — ผู้ใช้เลือกจากรูป ยี่ห้อ/รุ่น และที่ตั้งก็พอ (IT เห็นรหัสในเว็บ) */
+/** ไม่แสดงรหัสทรัพย์สิน (ผู้ใช้ไม่สนใจ) แต่แสดง S/N — ใช้ยืนยันกับ IT ตอนรับของว่าได้เครื่องไหน */
 export function borrowAssetsMessage(categoryName: string, categoryId: number, assets: BorrowAssetInput[], page: number, hasMore: boolean): LineMessage {
   const cards: FlexNode[] = assets.map((a) => {
     const brandModel = [a.brand, a.model].filter(Boolean).join(' ');
@@ -472,10 +473,17 @@ export function borrowAssetsMessage(categoryName: string, categoryId: number, as
         text(clip(categoryName, 40), { size: 'xxs', color: C.borrow, weight: 'bold', wrap: false }),
         text(clip(a.assetName, 60), { weight: 'bold', size: 'md' }),
         ...(brandModel ? [text(clip(brandModel, 60), { size: 'xs', color: C.sub })] : []),
+        ...(a.serialNumber ? [text(`S/N: ${clip(a.serialNumber, 40)}`, { size: 'xs', color: C.text, weight: 'bold' })] : []),
         ...(a.locationName ? [text(`📍 ${clip(a.locationName, 50)}`, { size: 'xs', color: C.sub })] : []),
         { type: 'box', layout: 'horizontal', contents: [pill('ว่าง พร้อมใช้', C.ok)] },
       ],
-      footer: [button(postback('เลือกเครื่องนี้', `a=ba&as=${a.assetId}`, `เลือก ${clip(a.assetName, 60)}`), 'primary', C.borrow)],
+      footer: [
+        button(
+          postback('เลือกเครื่องนี้', `a=ba&as=${a.assetId}`, `เลือก ${clip(a.assetName, 60)}${a.serialNumber ? ` (S/N ${clip(a.serialNumber, 30)})` : ''}`),
+          'primary',
+          C.borrow,
+        ),
+      ],
     });
   });
   if (hasMore) {
@@ -496,6 +504,7 @@ export function borrowAssetsMessage(categoryName: string, categoryId: number, as
 
 export interface BorrowSummary {
   assetName: string;
+  serialNumber?: string | null;
   /** รูปอุปกรณ์ที่เลือก แสดงบนการ์ดขั้นถัดไปให้มั่นใจว่าเลือกถูกเครื่อง */
   imageUrl?: string | null;
   requestType?: RequestType;
@@ -505,6 +514,7 @@ export interface BorrowSummary {
 
 const summaryRows = (s: BorrowSummary): FlexNode[] => [
   row('อุปกรณ์', s.assetName),
+  ...(s.serialNumber ? [row('S/N', s.serialNumber)] : []),
   ...(s.requestType ? [row('ประเภท', REQUEST_TYPE_LABEL[s.requestType])] : []),
   ...(s.requestType === RequestType.BORROW ? [row('กำหนดคืน', thaiDate(s.dueDate))] : []),
   ...(s.approverName !== undefined ? [row('ผู้อนุมัติ', s.approverName ?? 'อนุมัติอัตโนมัติ')] : []),

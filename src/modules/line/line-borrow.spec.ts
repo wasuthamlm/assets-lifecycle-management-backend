@@ -15,7 +15,7 @@ const qb = (result: { getMany?: any[]; getOne?: any; getRawMany?: any[] }) => {
 
 const laptopCategory = { categoryId: 2, categoryName: 'Notebook', requiresHrRequest: true, parent: null };
 const mouseCategory = { categoryId: 3, categoryName: 'Mouse', requiresHrRequest: false, parent: null };
-const mouse = { assetId: 11, assetNo: 'AS-0011', assetName: 'Logitech M331', categoryId: 3, category: mouseCategory, currentStatus: AssetStatus.IN_STOCK };
+const mouse = { assetId: 11, assetNo: 'AS-0011', serialNumber: 'SN-LG-001', assetName: 'Logitech M331', categoryId: 3, category: mouseCategory, currentStatus: AssetStatus.IN_STOCK };
 
 const employee = { employeeId: 7, permissions: ['requisition.create'], roles: ['employee'] };
 const json = (messages: any[]) => JSON.stringify(messages);
@@ -69,15 +69,20 @@ describe('LineBorrowService', () => {
     expect(out).toContain('HR');
   });
 
-  it('asset cards show the first photo and no asset code / serial number', async () => {
+  it('asset cards show the first photo and S/N but not the asset code', async () => {
     const { service, storage } = build();
     const out = json(await service.handle(employee, p('a=bc&c=3')));
     expect(out).toContain('https://storage.example.com/asset/11/a.jpg');
     expect(out).not.toContain('b.jpg');
     expect(out).not.toContain('AS-0011');
-    expect(out).not.toContain('S/N');
+    expect(out).toContain('S/N: SN-LG-001');
     // signed URL อายุยาวพอให้เปิดดูการ์ดทีหลังได้
     expect(storage.createSignedUrl).toHaveBeenCalledWith('asset/11/a.jpg', 7 * 24 * 3600);
+  });
+
+  it('the selected S/N carries through to the confirm card', async () => {
+    const { service } = build({ admins: [{ employeeId: 1, fullName: 'แอดมิน หนึ่ง' }] });
+    expect(json(await service.handle(employee, p('a=bt&as=11&t=w')))).toContain('SN-LG-001');
   });
 
   it('a broken image lookup never blocks borrowing', async () => {
