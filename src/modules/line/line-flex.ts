@@ -195,8 +195,8 @@ export function helpMessage(name: string | null, webUrl?: string): LineMessage {
     bubble({
       header: header('IT SERVICE DESK', name ? `สวัสดีคุณ${name} 👋` : 'สวัสดีครับ 👋', C.ticket),
       body: [
-        text('เลือกจากเมนูด้านล่าง หรือพิมพ์อาการที่พบมาได้เลย', { color: C.sub }),
-        item('🛠', 'แจ้งปัญหา IT', 'พิมพ์อาการ 1 ข้อความ = 1 เรื่อง แนบรูปตามได้'),
+        text('เลือกจากเมนูด้านล่างได้เลย', { color: C.sub }),
+        item('🛠', 'แจ้งปัญหา IT', 'ทำตามขั้นตอน 4 ขั้น แนบรูปตามได้'),
         item('📦', 'เบิก/ยืมอุปกรณ์', 'เลือกอุปกรณ์ที่ว่างอยู่ แล้วส่งให้ IT อนุมัติ'),
         item('📋', 'ติดตามสถานะ', 'ดูเรื่องที่แจ้งและคำขอล่าสุด'),
         item('💻', 'อุปกรณ์ของฉัน', 'เครื่องที่ถืออยู่และกำหนดคืน'),
@@ -226,27 +226,120 @@ export function notLinkedMessage(webUrl?: string): LineMessage {
 
 // ───────────────────────── แจ้งปัญหา IT ─────────────────────────
 
-export function ticketPromptMessage(): LineMessage {
+/*
+ * แจ้งปัญหาแบบทีละขั้น (ดู LineTicketFlowService): ประเภท → อาการ → สถานที่ → ยืนยัน
+ * ต้องเริ่มจากเมนู "แจ้งปัญหา" เท่านั้น — ข้อความที่พิมพ์นอกขั้นตอนบอทไม่ยุ่ง ปล่อยเป็นแชทปกติให้แอดมิน OA ตอบ
+ * postback: a=tk & s= c(เลือกประเภท, c=) | skip(ข้ามสถานที่) | ok(ส่ง) | new(เริ่มใหม่) | x(ยกเลิก)
+ */
+export const TICKET_FLOW_STEPS = 4;
+
+export interface TicketDraftView {
+  category?: TicketCategory;
+  symptom?: string;
+  location?: string | null;
+}
+
+const stepProgress = (n: number): FlexNode => ({
+  type: 'box',
+  layout: 'horizontal',
+  spacing: 'xs',
+  margin: 'md',
+  contents: Array.from({ length: TICKET_FLOW_STEPS }, (_, i) => ({
+    type: 'box',
+    layout: 'vertical',
+    height: '4px',
+    cornerRadius: '2px',
+    backgroundColor: i < n ? '#FFFFFF' : '#FFFFFF4D',
+    contents: [],
+  })),
+});
+
+const stepHeader = (n: number, title: string): FlexNode => {
+  const h = header(`แจ้งปัญหา IT · ขั้นที่ ${n}/${TICKET_FLOW_STEPS}`, title, C.ticket);
+  return { ...h, contents: [...(h.contents as FlexNode[]), stepProgress(n)] };
+};
+
+const cancelTicketButton = () => button(postback('ยกเลิกการแจ้ง', 'a=tk&s=x', 'ยกเลิกการแจ้งปัญหา'), 'link', C.sub);
+
+const typeHint = (hint: string): FlexNode => ({
+  type: 'box',
+  layout: 'vertical',
+  backgroundColor: C.ticketSoft,
+  cornerRadius: '12px',
+  paddingAll: '12px',
+  spacing: 'xs',
+  contents: [text('⌨️ พิมพ์ตอบในช่องแชทด้านล่าง', { size: 'xxs', color: C.ticket, weight: 'bold' }), text(hint, { size: 'sm' })],
+});
+
+const draftRows = (d: TicketDraftView): FlexNode[] => [
+  row('ประเภท', d.category ? TICKET_CATEGORY_LABEL[d.category] : '-'),
+  row('อาการ', clip(d.symptom, 300)),
+  row('สถานที่', d.location ? clip(d.location, 120) : 'ไม่ระบุ'),
+];
+
+/** ขั้น 1: เลือกประเภทด้วยปุ่ม (ไม่ต้องพิมพ์) */
+export function ticketStepCategoryMessage(): LineMessage {
+  const categories = Object.values(TicketCategory) as TicketCategory[];
+  const pick = (c: TicketCategory) =>
+    button(postback(TICKET_CATEGORY_LABEL[c], `a=tk&s=c&c=${c}`, `ประเภท: ${TICKET_CATEGORY_LABEL[c]}`), 'secondary');
+  const rows: FlexNode[] = [];
+  for (let i = 0; i < categories.length; i += 2) {
+    rows.push({ type: 'box', layout: 'horizontal', spacing: 'sm', contents: categories.slice(i, i + 2).map(pick) });
+  }
   return flex(
-    'พิมพ์อาการที่พบส่งมาได้เลย',
+    'แจ้งปัญหา IT: เลือกประเภทปัญหา',
     bubble({
-      header: header('แจ้งปัญหา IT', 'พิมพ์อาการที่พบส่งมาได้เลย', C.ticket),
+      header: stepHeader(1, 'ปัญหาเกี่ยวกับอะไร?'),
+      body: [text('กดเลือกประเภทที่ใกล้เคียงที่สุด ไม่แน่ใจเลือก "อื่นๆ"', { color: C.sub }), ...rows],
+      footer: [cancelTicketButton()],
+    }),
+  );
+}
+
+/** ขั้น 2: พิมพ์อาการ */
+export function ticketStepSymptomMessage(d: TicketDraftView): LineMessage {
+  return flex(
+    'แจ้งปัญหา IT: พิมพ์อาการที่พบ',
+    bubble({
+      header: stepHeader(2, 'พิมพ์อาการที่พบ'),
       body: [
-        text('1 ข้อความ = 1 เรื่อง ระบบจะเปิดใบแจ้งให้ทันที', { color: C.sub }),
-        {
-          type: 'box',
-          layout: 'vertical',
-          backgroundColor: C.ticketSoft,
-          cornerRadius: '12px',
-          paddingAll: '12px',
-          spacing: 'xs',
-          contents: [
-            text('ตัวอย่าง', { size: 'xxs', color: C.ticket, weight: 'bold' }),
-            text('"โน้ตบุ๊กเปิดไม่ติด ไฟไม่ขึ้น\nอยู่ชั้น 3 ห้องบัญชี โทร 1234"', { size: 'sm' }),
-          ],
-        },
-        text('💡 บอกอาการ + ที่อยู่/ห้อง + เบอร์ติดต่อ จะช่วยให้ IT ไปถึงเร็วขึ้น', { size: 'xs', color: C.sub }),
-        text('📷 มีรูปประกอบ ส่งตามมาได้ภายใน 15 นาที', { size: 'xs', color: C.sub }),
+        row('ประเภท', d.category ? TICKET_CATEGORY_LABEL[d.category] : '-'),
+        separator(),
+        typeHint('เช่น "โน้ตบุ๊กเปิดไม่ติด ไฟไม่ขึ้น เสียบชาร์จแล้วก็ไม่ได้"'),
+        text('บรรทัดแรกจะเป็นหัวข้อเรื่อง', { size: 'xs', color: C.sub }),
+      ],
+      footer: [cancelTicketButton()],
+    }),
+  );
+}
+
+/** ขั้น 3: พิมพ์สถานที่ หรือข้าม */
+export function ticketStepLocationMessage(d: TicketDraftView): LineMessage {
+  return flex(
+    'แจ้งปัญหา IT: อยู่ที่ไหน',
+    bubble({
+      header: stepHeader(3, 'อยู่ที่ไหน?'),
+      body: [
+        ...draftRows({ ...d, location: undefined }).slice(0, 2),
+        separator(),
+        typeHint('ชั้น/ห้อง/โต๊ะ เช่น "ชั้น 3 ห้องบัญชี โต๊ะริมหน้าต่าง"'),
+      ],
+      footer: [button(postback('ข้าม ไม่ระบุสถานที่', 'a=tk&s=skip', 'ไม่ระบุสถานที่'), 'secondary'), cancelTicketButton()],
+    }),
+  );
+}
+
+/** ขั้น 4: สรุปก่อนส่ง — กดส่งเท่านั้นถึงจะเปิดงาน */
+export function ticketConfirmMessage(d: TicketDraftView): LineMessage {
+  return flex(
+    'แจ้งปัญหา IT: ตรวจสอบก่อนส่ง',
+    bubble({
+      header: stepHeader(4, 'ตรวจสอบก่อนส่ง'),
+      body: [...draftRows(d), separator(), text('กด "ส่งแจ้ง IT" แล้วทีม IT จะได้รับเรื่องทันที', { size: 'xs', color: C.sub })],
+      footer: [
+        button(postback('✅ ส่งแจ้ง IT', 'a=tk&s=ok', 'ส่งแจ้ง IT'), 'primary', C.ticket),
+        button(postback('✏️ เริ่มกรอกใหม่', 'a=tk&s=new', 'เริ่มกรอกใหม่'), 'secondary'),
+        cancelTicketButton(),
       ],
     }),
   );
@@ -262,15 +355,9 @@ export interface TicketCardInput {
   createdAt?: Date | string;
 }
 
-/** การ์ดยืนยันรับเรื่อง — ถ้ายังเป็นหมวด "อื่นๆ" แนบปุ่มลัดให้ผู้แจ้งเลือกประเภทได้ (ไม่บังคับ IT จัดหมวดเองได้) */
+/** การ์ดยืนยันรับเรื่อง — หลังกด "ส่งแจ้ง IT" ในขั้นตอนสุดท้าย */
 export function ticketCreatedMessage(t: TicketCardInput, webUrl?: string): LineMessage {
   const detail = webLink(webUrl, `/support-tickets/${t.ticketId}`);
-  const categoryQuick =
-    t.category === TicketCategory.OTHER
-      ? (Object.values(TicketCategory) as TicketCategory[])
-          .filter((c) => c !== TicketCategory.OTHER)
-          .map((c) => quickPostback(TICKET_CATEGORY_LABEL[c], `a=tc&id=${t.ticketId}&c=${c}`, `ประเภท: ${TICKET_CATEGORY_LABEL[c]}`))
-      : [];
   return flex(
     `รับเรื่องแล้ว ${t.ticketNo}`,
     bubble({
@@ -281,11 +368,10 @@ export function ticketCreatedMessage(t: TicketCardInput, webUrl?: string): LineM
         separator(),
         text('ทีม IT จะแจ้งความคืบหน้าทางแชทนี้', { size: 'xs', color: C.sub }),
         text('📷 ส่งรูปประกอบตามมาได้ภายใน 15 นาที', { size: 'xs', color: C.sub }),
-        ...(categoryQuick.length ? [text('👇 ช่วยเลือกประเภทปัญหาด้านล่าง (ไม่บังคับ)', { size: 'xs', color: C.ticket, weight: 'bold' })] : []),
       ],
       footer: detail ? [uriButton('ดูรายละเอียดบนเว็บ', detail, C.ticket)] : [],
     }),
-    categoryQuick.length ? categoryQuick : MENU_QUICK_REPLY,
+    MENU_QUICK_REPLY,
   );
 }
 

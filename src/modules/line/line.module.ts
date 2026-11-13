@@ -19,14 +19,16 @@ import { LineStaffService } from './line-staff.service';
 import { Attachment } from '../attachments/entities/attachment.entity';
 import { StorageModule } from '../storage/storage.module';
 import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity';
+import { LineChatSession } from './entities/line-chat-session.entity';
+import { LineTicketFlowService } from './line-ticket-flow.service';
 
 /**
  * แจ้งปัญหา IT ผ่าน LINE OA — หน้า LIFF (ใน frontend repo) เรียก /line/liff/* ด้วย LINE ID token
- * และแชทบอท: พิมพ์อาการในแชท OA → webhook /line/webhook (ตรวจลายเซ็นด้วย channel secret) → เปิด ticket
+ * และแชทบอท: กดเมนูแจ้งปัญหาในแชท OA → webhook /line/webhook (ตรวจลายเซ็นด้วย channel secret) → เปิด ticket
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee, SupportTicket, Asset, Requisition, LineLinkCode, LineLinkAttempt, Attachment]),
+    TypeOrmModule.forFeature([User, Employee, SupportTicket, Asset, Requisition, LineLinkCode, LineLinkAttempt, LineChatSession, Attachment]),
     StorageModule,
     LineCoreModule,
     AuthModule,
@@ -35,6 +37,6 @@ import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity'
     RequisitionsModule,
   ],
   controllers: [LineLinkController, LineLiffController, LineWebhookController],
-  providers: [LineLinkService, LineIdTokenGuard, LineChatService, LineBorrowService, LineStaffService],
+  providers: [LineLinkService, LineIdTokenGuard, LineChatService, LineBorrowService, LineStaffService, LineTicketFlowService],
 })
 export class LineModule {}

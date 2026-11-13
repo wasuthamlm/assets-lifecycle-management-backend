@@ -16,6 +16,7 @@ import { LineLinkService } from './line-link.service';
 import { resolveLineUser } from './line-id-token.guard';
 import { LineBorrowService, bangkokToday } from './line-borrow.service';
 import { LineStaffService } from './line-staff.service';
+import { LineTicketFlowService } from './line-ticket-flow.service';
 import {
   LineMessage,
   TICKET_CATEGORY_LABEL,
@@ -24,8 +25,6 @@ import {
   notLinkedMessage,
   statusOverviewMessage,
   textMessage,
-  ticketCreatedMessage,
-  ticketPromptMessage,
 } from './line-flex';
 
 /** event จาก webhook เฉพาะส่วนที่ใช้ — https://developers.line.biz/en/reference/messaging-api/#webhook-event-objects */
@@ -44,12 +43,8 @@ export interface LineWebhookEvent {
   postback?: { data: string; params?: { date?: string } };
 }
 
-/** รูปที่ส่งตามมาหลังพิมพ์อาการภายในเวลานี้ จะถูกแนบเข้า ticket ล่าสุดที่แจ้งทางแชท */
+/** รูปที่ส่งตามมาหลังส่งแจ้งปัญหาภายในเวลานี้ จะถูกแนบเข้า ticket ล่าสุดที่แจ้งทางแชท */
 export const ATTACH_WINDOW_MS = 15 * 60 * 1000;
-const SUBJECT_MAX = 80;
-const NO_LOCATION = 'ไม่ได้ระบุ (แจ้งผ่านแชท LINE)';
-// ข้อความทักทาย/ตอบรับที่ไม่ควรกลายเป็น ticket
-const SMALL_TALK = new Set(['สวัสดี', 'สวัสดีครับ', 'สวัสดีค่ะ', 'ขอบคุณ', 'ขอบคุณครับ', 'ขอบคุณค่ะ', 'โอเค', 'ok', 'hi', 'hello', 'ครับ', 'ค่ะ', 'คะ', 'จ้า']);
 
 type MenuKey = 'ticket' | 'borrow' | 'status' | 'assets' | 'help';
 // คำที่พิมพ์แทนการกดเมนูได้ (เผื่อเครื่องที่ไม่เห็น rich menu เช่น LINE บน PC)
@@ -81,7 +76,8 @@ const STAFF_ACTIONS = new Set(['sa', 'sr', 'ra']);
 
 /**
  * แชทบอทฝ่าย IT: rich menu (สร้างด้วย scripts/line-rich-menu.mjs) → postback → ตอบเป็น Flex
- * - แจ้งปัญหา: พิมพ์อาการ 1 ข้อความ → เปิด ticket (หมวด "อื่นๆ" แล้วให้เลือกประเภทจาก quick reply ได้)
+ * - แจ้งปัญหา: กดเมนูแล้วทำทีละขั้น (ดู LineTicketFlowService) — ข้อความที่พิมพ์นอกขั้นตอน
+ *   บอทไม่ตอบและไม่กดอ่าน ปล่อยเป็นแชทปกติให้แอดมิน OA (กันพิมพ์เล่น/เผลอส่งแล้วกลายเป็นงาน)
  * - เบิก/ยืม: ดู LineBorrowService
  * - เจ้าหน้าที่ IT: งานใหม่/ใบขอถูก push เข้า LINE พร้อมปุ่มรับงาน/อนุมัติ — ดู LineStaffService
  * ทุกการตอบใช้ reply API (ฟรี) — push ใช้เฉพาะตอนสถานะ ticket เปลี่ยน (ดู SupportTicketsService)
@@ -102,6 +98,7 @@ export class LineChatService {
     private requisitions: RequisitionsService,
     private assignments: AssignmentsService,
     private staff: LineStaffService,
+    private ticketFlow: LineTicketFlowService,
   ) {}
 
   async handleEvents(events: LineWebhookEvent[]): Promise<void> {
@@ -124,9 +121,15 @@ export class LineChatService {
     const replyToken = event.replyToken;
     // แชทกลุ่ม/ห้อง ไม่รองรับ — ต้องคุย 1:1 กับ OA เพื่อรู้ว่าใครแจ้ง
     if (!lineUserId || !replyToken || event.source?.type !== 'user') return;
-    // ขึ้น "อ่านแล้ว" ทันที — ถ้า OA เปิดโหมด Chat ข้อความจะไม่ถูกอ่านอัตโนมัติ
-    if (event.message?.markAsReadToken) void this.messaging.markAsRead(event.message.markAsReadToken);
-    const send = (...messages: LineMessage[]) => this.messaging.replyMessages(replyToken, messages);
+    // กด "อ่านแล้ว" เฉพาะข้อความที่บอทตอบ — ข้อความที่บอทไม่ยุ่ง (แชทปกติ) ต้องค้างเป็น "ยังไม่อ่าน"
+    // ให้แอดมิน OA เห็นและตอบเอง (OA เปิดโหมด Chat ข้อความจะไม่ถูกอ่านอัตโนมัติ)
+    const markRead = () => {
+      if (event.message?.markAsReadToken) void this.messaging.markAsRead(event.message.markAsReadToken);
+    };
+    const send = (...messages: LineMessage[]) => {
+      markRead();
+      return this.messaging.replyMessages(replyToken, messages);
+    };
 
     const user = await this.resolveUser(lineUserId);
 
@@ -138,7 +141,8 @@ export class LineChatService {
       if (event.type === 'postback') return send(notLinkedMessage(this.webUrl));
       if (event.type !== 'message' || !event.message) return;
       const text = event.message.type === 'text' ? (event.message.text ?? '').trim() : '';
-      if (!/^\d{6}$/.test(text)) return send(notLinkedMessage(this.webUrl));
+      // ยังไม่ผูกบัญชี: บอทรับแค่รหัส 6 หลัก ที่เหลือเป็นแชทปกติ (การ์ดวิธีเชื่อมบัญชีได้ตอนกดเมนู/เพิ่มเพื่อน)
+      if (!/^\d{6}$/.test(text)) return;
       const result = await this.linkService.linkByCode(lineUserId, text);
       if (result === 'too_many_attempts') return send(textMessage('ใส่รหัสผิดหลายครั้งเกินไป กรุณารอ 10 นาทีแล้วขอรหัสใหม่'));
       if (result === 'invalid') return send(textMessage('รหัสไม่ถูกต้องหรือหมดอายุแล้ว กรุณาขอรหัสใหม่จากหน้าโปรไฟล์ในเว็บ'));
@@ -146,17 +150,28 @@ export class LineChatService {
       return send(textMessage('✅ เชื่อมบัญชีเรียบร้อย'), helpMessage(linked?.fullName ?? null, this.webUrl));
     }
 
-    if (user.mustChangePassword) return send(textMessage('กรุณาเข้าเว็บเพื่อเปลี่ยนรหัสผ่านก่อน จึงจะใช้งานผ่าน LINE ได้'));
+    const mustChangePassword = () => send(textMessage('กรุณาเข้าเว็บเพื่อเปลี่ยนรหัสผ่านก่อน จึงจะใช้งานผ่าน LINE ได้'));
 
     if (event.type === 'postback' && event.postback) {
+      if (user.mustChangePassword) return mustChangePassword();
       return send(...(await this.handlePostback(user, lineUserId, event.postback)));
     }
     if (event.type !== 'message' || !event.message) return;
 
     const { message } = event;
-    if (message.type === 'text') return send(...(await this.handleText(user, lineUserId, (message.text ?? '').trim())));
-    if (message.type === 'image') return this.handleImage(user, message, (...t) => this.messaging.reply(replyToken, t));
-    return send(textMessage('ตอนนี้รองรับเฉพาะข้อความและรูปภาพครับ', true));
+    if (message.type === 'text') {
+      const replies = await this.handleText(user, lineUserId, (message.text ?? '').trim());
+      if (!replies) return; // แชทปกติ — ไม่ตอบ ไม่กดอ่าน
+      if (user.mustChangePassword) return mustChangePassword();
+      return send(...replies);
+    }
+    if (message.type === 'image') {
+      return this.handleImage(user, lineUserId, message, (...t) => {
+        markRead();
+        return this.messaging.reply(replyToken, t);
+      });
+    }
+    // สติกเกอร์/ไฟล์/ฯลฯ — แชทปกติ
   }
 
   private async handlePostback(
@@ -168,7 +183,9 @@ export class LineChatService {
     if (postback.params?.date) params.set('date', postback.params.date);
     const action = params.get('a') ?? '';
 
-    if (action === 'menu') return this.menu(user, params.get('m') as MenuKey);
+    if (action === 'menu') return this.menu(user, lineUserId, params.get('m') as MenuKey);
+    if (action === 'tk') return this.ticketFlow.handlePostback(user, lineUserId, params, this.webUrl);
+    // ปุ่มเลือกประเภทในการ์ด "รับเรื่องแล้ว" แบบเก่า (ก่อนมีขั้นตอน) — เผื่อมีคนกดการ์ดเก่าในแชท
     if (action === 'tc') return [await this.setTicketCategory(user, Number(params.get('id')), params.get('c'))];
     if (action === 'noop') return [textMessage('ยกเลิกแล้วครับ')];
     if (STAFF_ACTIONS.has(action)) {
@@ -182,10 +199,10 @@ export class LineChatService {
     return [helpMessage(user.fullName, this.webUrl)];
   }
 
-  private async menu(user: ChatUser, key: MenuKey): Promise<LineMessage[]> {
+  private async menu(user: ChatUser, lineUserId: string, key: MenuKey): Promise<LineMessage[]> {
     switch (key) {
       case 'ticket':
-        return [ticketPromptMessage()];
+        return this.ticketFlow.start(user, lineUserId);
       case 'borrow':
         return this.borrow.handle(user, new URLSearchParams({ a: 'menu' }), this.webUrl);
       case 'status':
@@ -197,24 +214,14 @@ export class LineChatService {
     }
   }
 
-  private async handleText(user: ChatUser, lineUserId: string, text: string): Promise<LineMessage[]> {
-    const normalized = text.toLowerCase();
-    const command = TEXT_COMMANDS[normalized];
-    if (command) return this.menu(user, command);
-    if (/^\d{6}$/.test(text)) return [textMessage('บัญชีนี้เชื่อมกับพนักงานเรียบร้อยแล้ว พิมพ์อาการที่พบมาได้เลย', true)];
-    if (text.length < 5 || SMALL_TALK.has(normalized)) return [helpMessage(user.fullName, this.webUrl)];
-
-    if (!user.permissions.includes('ticket.create')) return [textMessage('บัญชีของคุณไม่มีสิทธิ์แจ้งปัญหา กรุณาติดต่อฝ่าย IT')];
-
-    void this.messaging.showLoading(lineUserId, 10);
-    const firstLine = text.split('\n')[0].trim();
-    const subject = firstLine.length > SUBJECT_MAX ? `${firstLine.slice(0, SUBJECT_MAX - 1)}…` : firstLine;
-    const ticket = await this.tickets.create(
-      { category: TicketCategory.OTHER, subject, description: text, locationDetail: NO_LOCATION },
-      { employeeId: user.employeeId, permissions: user.permissions },
-      { source: TicketSource.LINE, notifyReporter: false },
-    );
-    return [ticketCreatedMessage(ticket, this.webUrl)];
+  /**
+   * null = ไม่ใช่ข้อความถึงบอท → ปล่อยเป็นแชทปกติ
+   * บอทรับเฉพาะคำสั่งที่ตรงตัว (เผื่อเครื่องที่ไม่เห็น rich menu) กับข้อความในขั้นตอนแจ้งปัญหาที่กดเริ่มจากเมนูแล้ว
+   */
+  private async handleText(user: ChatUser, lineUserId: string, text: string): Promise<LineMessage[] | null> {
+    const command = TEXT_COMMANDS[text.toLowerCase()];
+    if (command) return this.menu(user, lineUserId, command);
+    return this.ticketFlow.handleText(lineUserId, text);
   }
 
   /**
@@ -270,11 +277,14 @@ export class LineChatService {
     );
   }
 
+  /** รูปที่ส่งตามมาหลังแจ้งเรื่อง (ภายใน 15 นาที) → แนบเข้าเรื่องล่าสุด; นอกนั้นเป็นแชทปกติ ไม่ตอบ */
   private async handleImage(
     user: ChatUser,
+    lineUserId: string,
     message: NonNullable<LineWebhookEvent['message']>,
     reply: (...t: string[]) => Promise<void>,
   ) {
+    if (await this.ticketFlow.isActive(lineUserId)) return reply('ส่งรูปได้หลังกด "ส่งแจ้ง IT" แล้วครับ (ภายใน 15 นาที)');
     const ticket = await this.ticketRepo.findOne({
       where: {
         reportedBy: user.employeeId,
@@ -283,7 +293,7 @@ export class LineChatService {
       },
       order: { ticketId: 'DESC' },
     });
-    if (!ticket) return reply('กรุณาพิมพ์อาการที่พบก่อน แล้วค่อยส่งรูปตามมาครับ');
+    if (!ticket) return;
 
     const { buffer, contentType } = await this.messaging.getMessageContent(message.id);
     if (!ALLOWED_ATTACHMENT_MIME_TYPES.includes(contentType)) return reply('รองรับเฉพาะรูป jpg, png หรือ webp');

@@ -1,6 +1,8 @@
 import { createHmac } from 'crypto';
 import { DataSource } from 'typeorm';
 import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity';
+import { LineChatSession } from './entities/line-chat-session.entity';
+import { LineTicketFlowService } from './line-ticket-flow.service';
 import { TicketCategory, TicketSource } from '@common/enums';
 import { LineChatService, LineWebhookEvent } from './line-chat.service';
 import { LineLinkService, LINK_CODE_TTL_MS } from './line-link.service';
@@ -131,6 +133,32 @@ describe('LineLinkService link codes', () => {
   });
 });
 
+/** จำลองตาราง line_chat_sessions — เฉพาะ method ที่ LineTicketFlowService ใช้ */
+function fakeSessionRepo() {
+  const rows = new Map<string, any>();
+  return {
+    rows,
+    findOne: jest.fn(async ({ where }: any) => (rows.has(where.lineUserId) ? { ...rows.get(where.lineUserId) } : null)),
+    save: jest.fn(async (row: any) => rows.set(row.lineUserId, { ...row })),
+    delete: jest.fn(async (where: any) => rows.delete(where.lineUserId)),
+    createQueryBuilder: jest.fn(() => {
+      let params: any;
+      const qb: any = {
+        delete: () => qb,
+        where: (_sql: string, p: any) => ((params = p), qb),
+        returning: () => qb,
+        execute: async () => {
+          const r = rows.get(params.lineUserId);
+          if (!r || r.flow !== params.flow || r.step !== params.step || r.expiresAt <= params.now) return { raw: [] };
+          rows.delete(params.lineUserId);
+          return { raw: [{ data: r.data }] };
+        },
+      };
+      return qb;
+    }),
+  };
+}
+
 describe('LineChatService', () => {
   const linkedUser = { userId: 3, username: 'somchai', employeeId: 7, permissions: ['ticket.create'], roles: [], mustChangePassword: false };
 
@@ -145,7 +173,7 @@ describe('LineChatService', () => {
     } as any;
     const linkService = { linkByCode: jest.fn().mockResolvedValue('invalid') } as any;
     const tickets = {
-      create: jest.fn().mockImplementation(async (dto) => ({ ticketId: 42, ticketNo: 'IT-6911-0001', subject: dto.subject })),
+      create: jest.fn().mockImplementation(async (dto) => ({ ticketId: 42, ticketNo: 'IT-6911-0001', subject: dto.subject, category: dto.category, status: 'open' })),
       uploadAttachment: jest.fn(),
       findMine: jest.fn().mockResolvedValue({ data: [] }),
     } as any;
@@ -158,15 +186,23 @@ describe('LineChatService', () => {
     const requisitions = { findMine: jest.fn().mockResolvedValue({ data: [] }) } as any;
     const assignments = { findMine: jest.fn().mockResolvedValue([]) } as any;
     const staff = { handle: jest.fn().mockResolvedValue([{ type: 'text', text: 'staff' }]) } as any;
-    const service = new LineChatService(messaging, linkService, tickets, jwt, users, ticketRepo, borrow, requisitions, assignments, staff);
-    return { service, messaging, linkService, tickets, ticketRepo, borrow, staff };
+    const sessions = fakeSessionRepo();
+    const ticketFlow = new LineTicketFlowService(sessions as any, tickets);
+    const service = new LineChatService(messaging, linkService, tickets, jwt, users, ticketRepo, borrow, requisitions, assignments, staff, ticketFlow);
+    return { service, messaging, linkService, tickets, ticketRepo, borrow, staff, sessions };
   };
 
   const text = (t: string): LineWebhookEvent => ({
     type: 'message',
     replyToken: 'rt',
     source: { type: 'user', userId: 'U1' },
-    message: { id: 'm1', type: 'text', text: t },
+    message: { id: 'm1', type: 'text', text: t, markAsReadToken: 'tok' },
+  });
+  const image = (): LineWebhookEvent => ({
+    type: 'message',
+    replyToken: 'rt',
+    source: { type: 'user', userId: 'U1' },
+    message: { id: 'img1', type: 'image', markAsReadToken: 'tok' },
   });
   // คำตอบล่าสุด (reply ข้อความล้วน หรือ replyMessages แบบ Flex) เป็น JSON string ไว้เช็คด้วย toContain
   const replied = (messaging: any) => {
@@ -175,6 +211,11 @@ describe('LineChatService', () => {
     );
     return JSON.stringify(calls.sort((a, b) => a.order - b.order).at(-1)?.payload);
   };
+  const silent = (messaging: any) => {
+    expect(messaging.reply).not.toHaveBeenCalled();
+    expect(messaging.replyMessages).not.toHaveBeenCalled();
+    expect(messaging.markAsRead).not.toHaveBeenCalled();
+  };
   const postback = (data: string, params?: { date: string }): LineWebhookEvent => ({
     type: 'postback',
     replyToken: 'rt',
@@ -182,17 +223,97 @@ describe('LineChatService', () => {
     postback: { data, params },
   });
 
-  it('marks incoming messages as read', async () => {
+  it('leaves free text outside the ticket flow as an unread normal chat (no reply, no ticket)', async () => {
+    const { service, messaging, tickets } = build();
+    await service.handleEvents([text('คอมพังครับ ช่วยดูหน่อย'), text('ขอบคุณครับ'), text('555'), text('123456')]);
+    expect(tickets.create).not.toHaveBeenCalled();
+    silent(messaging);
+  });
+
+  it('exact text commands still work and are marked read', async () => {
     const { service, messaging } = build();
-    await service.handleEvents([{ ...text('สวัสดี'), message: { id: 'm1', type: 'text', text: 'สวัสดี', markAsReadToken: 'tok' } }]);
+    await service.handleEvents([text('สถานะ')]);
+    expect(messaging.replyMessages).toHaveBeenCalled();
     expect(messaging.markAsRead).toHaveBeenCalledWith('tok');
   });
 
-  it('rich menu postbacks: ticket prompt, borrow delegates, unlinked users get the link card', async () => {
-    const { service, messaging, borrow } = build();
+  it('opens a ticket only after walking every step and pressing send', async () => {
+    const { service, messaging, tickets } = build();
     await service.handleEvents([postback('a=menu&m=ticket')]);
-    expect(replied(messaging)).toContain('พิมพ์อาการ');
+    expect(replied(messaging)).toContain('ขั้นที่ 1/4');
 
+    await service.handleEvents([postback('a=tk&s=c&c=hardware')]);
+    expect(replied(messaging)).toContain('ขั้นที่ 2/4');
+
+    await service.handleEvents([text('โน้ตบุ๊กเปิดไม่ติด\nไฟไม่ขึ้นเลย')]);
+    expect(replied(messaging)).toContain('ขั้นที่ 3/4');
+    expect(messaging.markAsRead).toHaveBeenCalledWith('tok');
+
+    await service.handleEvents([text('ชั้น 3 ห้องบัญชี')]);
+    expect(replied(messaging)).toContain('ขั้นที่ 4/4');
+    expect(tickets.create).not.toHaveBeenCalled();
+
+    await service.handleEvents([postback('a=tk&s=ok')]);
+    expect(tickets.create).toHaveBeenCalledWith(
+      { category: TicketCategory.HARDWARE, subject: 'โน้ตบุ๊กเปิดไม่ติด', description: 'โน้ตบุ๊กเปิดไม่ติด\nไฟไม่ขึ้นเลย', locationDetail: 'ชั้น 3 ห้องบัญชี' },
+      { employeeId: 7, permissions: ['ticket.create'] },
+      { source: TicketSource.LINE, notifyReporter: false },
+    );
+    expect(replied(messaging)).toContain('IT-6911-0001');
+
+    // กดส่งซ้ำ / พิมพ์ต่อหลังส่งแล้ว → ไม่เปิดงานเพิ่ม และข้อความกลับเป็นแชทปกติ
+    await service.handleEvents([postback('a=tk&s=ok')]);
+    expect(tickets.create).toHaveBeenCalledTimes(1);
+    messaging.replyMessages.mockClear();
+    messaging.markAsRead.mockClear();
+    await service.handleEvents([text('ขอบคุณครับ')]);
+    expect(messaging.replyMessages).not.toHaveBeenCalled();
+    expect(messaging.markAsRead).not.toHaveBeenCalled();
+  });
+
+  it('skipping location uses the placeholder', async () => {
+    const { service, tickets } = build();
+    await service.handleEvents([postback('a=menu&m=ticket'), postback('a=tk&s=c&c=network'), text('เน็ตหลุดบ่อย'), postback('a=tk&s=skip'), postback('a=tk&s=ok')]);
+    expect(tickets.create.mock.calls[0][0]).toEqual(expect.objectContaining({ category: TicketCategory.NETWORK, locationDetail: 'ไม่ได้ระบุ (แจ้งผ่านแชท LINE)' }));
+  });
+
+  it('typing on a button step re-shows the step instead of advancing', async () => {
+    const { service, messaging, tickets } = build();
+    await service.handleEvents([postback('a=menu&m=ticket'), text('คอมพัง')]);
+    expect(replied(messaging)).toContain('ขั้นที่ 1/4');
+    expect(tickets.create).not.toHaveBeenCalled();
+  });
+
+  it('cancel ends the flow and later text is normal chat again', async () => {
+    const { service, messaging, tickets, sessions } = build();
+    await service.handleEvents([postback('a=menu&m=ticket'), postback('a=tk&s=c&c=software'), postback('a=tk&s=x')]);
+    expect(sessions.rows.size).toBe(0);
+    messaging.replyMessages.mockClear();
+    messaging.markAsRead.mockClear();
+    await service.handleEvents([text('Excel ค้าง')]);
+    expect(tickets.create).not.toHaveBeenCalled();
+    expect(messaging.replyMessages).not.toHaveBeenCalled();
+  });
+
+  it('expired session: old send button asks to start over', async () => {
+    const { service, messaging, tickets, sessions } = build();
+    await service.handleEvents([postback('a=menu&m=ticket'), postback('a=tk&s=c&c=software'), text('Excel ค้าง'), postback('a=tk&s=skip')]);
+    sessions.rows.get('U1').expiresAt = new Date(Date.now() - 1);
+    await service.handleEvents([postback('a=tk&s=ok')]);
+    expect(tickets.create).not.toHaveBeenCalled();
+    expect(replied(messaging)).toContain('เริ่มใหม่');
+  });
+
+  it('users without ticket.create cannot start the flow', async () => {
+    const { service, messaging, sessions } = build();
+    (service as any).jwtStrategy.validate.mockResolvedValue({ ...linkedUser, permissions: [] });
+    await service.handleEvents([postback('a=menu&m=ticket')]);
+    expect(replied(messaging)).toContain('ไม่มีสิทธิ์');
+    expect(sessions.rows.size).toBe(0);
+  });
+
+  it('rich menu postbacks: borrow delegates, unlinked users get the link card', async () => {
+    const { service, borrow } = build();
     await service.handleEvents([postback('a=bt&as=5&t=b', { date: '2099-01-01' })]);
     const params: URLSearchParams = borrow.handle.mock.calls[0][1];
     expect(params.get('date')).toBe('2099-01-01');
@@ -203,7 +324,7 @@ describe('LineChatService', () => {
     expect(replied(unlinked.messaging)).toContain('เชื่อมบัญชี');
   });
 
-  it('category quick reply only updates the reporter’s own open LINE ticket', async () => {
+  it('old category quick reply only updates the reporter own open LINE ticket', async () => {
     const { service, ticketRepo, messaging } = build();
     await service.handleEvents([postback('a=tc&id=42&c=network')]);
     expect(ticketRepo.update).toHaveBeenCalledWith(
@@ -216,37 +337,21 @@ describe('LineChatService', () => {
     expect(replied(messaging)).toContain('ไม่ถูกต้อง');
   });
 
-  it('creates a LINE ticket from one message and replies with the ticket number (no push)', async () => {
-    const { service, tickets, messaging } = build();
-    await service.handleEvents([text('โน้ตบุ๊กเปิดไม่ติด\nอยู่ชั้น 3 ห้องบัญชี')]);
-    expect(tickets.create).toHaveBeenCalledWith(
-      expect.objectContaining({ category: TicketCategory.OTHER, subject: 'โน้ตบุ๊กเปิดไม่ติด', description: 'โน้ตบุ๊กเปิดไม่ติด\nอยู่ชั้น 3 ห้องบัญชี' }),
-      { employeeId: 7, permissions: ['ticket.create'] },
-      { source: TicketSource.LINE, notifyReporter: false },
-    );
-    expect(replied(messaging)).toContain('IT-6911-0001');
-  });
-
-  it('does not open tickets for greetings or commands', async () => {
-    const { service, tickets } = build();
-    await service.handleEvents([text('สวัสดีครับ'), text('ok'), text('สถานะ'), text('ช่วยเหลือ')]);
-    expect(tickets.create).not.toHaveBeenCalled();
-  });
-
-  it('asks unlinked users for a code and links with a 6-digit message', async () => {
+  it('unlinked users: free text is normal chat, a 6-digit message links', async () => {
     const { service, tickets, linkService, messaging } = build({ linked: false });
     await service.handleEvents([text('คอมพัง')]);
     expect(tickets.create).not.toHaveBeenCalled();
-    expect(replied(messaging)).toContain('รหัส 6 หลัก');
+    silent(messaging);
 
     linkService.linkByCode.mockResolvedValue('linked');
     await service.handleEvents([text('123456')]);
     expect(linkService.linkByCode).toHaveBeenCalledWith('U1', '123456');
+    expect(messaging.markAsRead).toHaveBeenCalledWith('tok');
   });
 
   it('attaches an image to the latest chat ticket', async () => {
     const { service, tickets, messaging } = build({ recentTicket: { ticketId: 42, ticketNo: 'IT-6911-0001' } });
-    await service.handleEvents([{ ...text(''), message: { id: 'img1', type: 'image' } }]);
+    await service.handleEvents([image()]);
     expect(tickets.uploadAttachment).toHaveBeenCalledWith(
       42,
       expect.objectContaining({ mimetype: 'image/jpeg', originalname: 'line-img1.jpg' }),
@@ -256,17 +361,27 @@ describe('LineChatService', () => {
     expect(replied(messaging)).toContain('IT-6911-0001');
   });
 
-  it('asks for a description first when an image arrives with no recent ticket', async () => {
+  it('an image with no recent ticket is normal chat', async () => {
     const { service, tickets, messaging } = build();
-    await service.handleEvents([{ ...text(''), message: { id: 'img1', type: 'image' } }]);
+    await service.handleEvents([image()]);
     expect(tickets.uploadAttachment).not.toHaveBeenCalled();
-    expect(replied(messaging)).toContain('พิมพ์อาการ');
+    silent(messaging);
   });
 
   it('never throws — replies with an error message instead', async () => {
     const { service, tickets, messaging } = build();
     tickets.create.mockRejectedValue(new Error('db down'));
-    await expect(service.handleEvents([text('จอดับ เปิดไม่ขึ้น')])).resolves.toBeUndefined();
+    await service.handleEvents([postback('a=menu&m=ticket'), postback('a=tk&s=c&c=other'), text('จอดับ เปิดไม่ขึ้น'), postback('a=tk&s=skip')]);
+    await expect(service.handleEvents([postback('a=tk&s=ok')])).resolves.toBeUndefined();
     expect(replied(messaging)).toContain('ขัดข้อง');
+  });
+});
+
+describe('LineTicketFlowService submit SQL', () => {
+  it('keeps RETURNING data so a confirmed draft is not lost', async () => {
+    const ds = new DataSource({ type: 'postgres', entities: [LineChatSession] });
+    await (ds as any).buildMetadatas();
+    const flow = new LineTicketFlowService(ds.getRepository(LineChatSession), {} as any);
+    expect(flow.consumeConfirmedQuery('U1', new Date()).getQuery()).toMatch(/RETURNING "?data"?$/);
   });
 });
