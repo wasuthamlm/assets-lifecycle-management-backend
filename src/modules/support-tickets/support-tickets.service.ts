@@ -188,7 +188,17 @@ export class SupportTicketsService {
 
     const page = query.page || 1;
     const limit = query.limit || 20;
-    qb.orderBy('t.ticketId', 'DESC').skip((page - 1) * limit).take(limit);
+    if (query.sort === 'status') {
+      qb.orderBy(
+        "CASE t.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'resolved' THEN 2 WHEN 'closed' THEN 3 ELSE 4 END",
+        'ASC',
+      ).addOrderBy('t.ticketId', 'DESC');
+    } else {
+      qb.orderBy('t.ticketId', 'DESC');
+    }
+    // offset/limit แทน skip/take: skip/take ทำ DISTINCT subquery ที่รับ ORDER BY แบบ expression (CASE) ไม่ได้
+    // ใช้ได้เพราะทุก join เป็น ManyToOne — 1 ticket = 1 แถวเสมอ
+    qb.offset((page - 1) * limit).limit(limit);
 
     return qb.getManyAndCount().then(([data, total]) => ({ data, total, page, limit }));
   }

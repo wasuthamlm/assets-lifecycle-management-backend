@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TicketCategory, TicketSource, TicketStatus } from '@common/enums';
-import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class QueryTicketDto {
@@ -24,6 +24,14 @@ export class QueryTicketDto {
   @IsOptional()
   @IsEnum(TicketSource)
   source?: TicketSource;
+
+  @ApiPropertyOptional({
+    enum: ['latest', 'status'],
+    description: 'latest (ค่าเริ่มต้น) = ใหม่สุดก่อน, status = รอดำเนินการ → กำลังดำเนินการ → แก้ไขแล้ว → ปิดงาน → ยกเลิก แล้วใหม่สุดก่อนในแต่ละสถานะ',
+  })
+  @IsOptional()
+  @IsIn(['latest', 'status'])
+  sort?: 'latest' | 'status';
 
   @ApiPropertyOptional()
   @IsOptional()
