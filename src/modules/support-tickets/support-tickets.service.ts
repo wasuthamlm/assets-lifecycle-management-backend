@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { SupportTicket, TicketReporterInfo } from './entities/support-ticket.entity';
@@ -10,10 +10,11 @@ import { CreateTicketDto } from './dto/create-ticket.dto';
 import { QueryTicketDto } from './dto/query-ticket.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
 import { EscalateToRepairDto } from './dto/escalate-to-repair.dto';
-import { HolderType, NotificationType, TicketPriority, TicketStatus } from '@common/enums';
+import { HolderType, NotificationType, TicketPriority, TicketSource, TicketStatus } from '@common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RepairsService } from '../repairs/repairs.service';
 import { AttachmentsService } from '../attachments/attachments.service';
+import { LineMessagingService } from '../line/line-messaging.service';
 import { generateSequentialNumber } from '@common/utils/sequential-number.util';
 import { toThaiDateString } from '@common/utils/thai-date.util';
 
@@ -49,10 +50,21 @@ export class SupportTicketsService {
     private notifications: NotificationsService,
     private attachments: AttachmentsService,
     private dataSource: DataSource,
+    // @Optional — test เดิมสร้าง service โดยไม่ส่งตัวนี้ และไม่มี LINE ก็ต้องทำงานได้ตามปกติ
+    @Optional() private lineMessaging?: LineMessagingService,
   ) {}
 
-  async create(dto: CreateTicketDto, currentUser: CurrentUserScope & { employeeId: number }) {
+  /**
+   * source ไม่ได้มาจาก DTO — client ปลอมเป็น LINE ไม่ได้ เฉพาะ LineLiffController (ที่ผ่านการตรวจ LINE ID token แล้ว)
+   * เท่านั้นที่ส่ง TicketSource.LINE เข้ามา
+   */
+  async create(
+    dto: CreateTicketDto,
+    currentUser: CurrentUserScope & { employeeId: number },
+    opts: { source?: TicketSource; notifyReporter?: boolean } = {},
+  ) {
     const reportedBy = currentUser.employeeId;
+    const source = opts.source ?? TicketSource.WEB;
     const ticket = await this.dataSource.transaction(async (manager) => {
       const employee = await manager.findOne(Employee, {
         where: { employeeId: reportedBy },
@@ -94,6 +106,7 @@ export class SupportTicketsService {
 
       const ticket = manager.create(SupportTicket, {
         ticketNo,
+        source,
         reportedBy,
         reporterInfo,
         category: dto.category,
@@ -116,13 +129,24 @@ export class SupportTicketsService {
     await this.notifications.notifyByPermission(
       'ticket.manage',
       NotificationType.TICKET_CREATED,
-      `มี ticket แจ้งปัญหาใหม่ ${ticket.ticketNo}`,
+      `${source === TicketSource.LINE ? '[LINE] ' : ''}มี ticket แจ้งปัญหาใหม่ ${ticket.ticketNo}`,
       `${ticket.reporterInfo.fullName}${ticket.reporterInfo.departmentName ? ` (${ticket.reporterInfo.departmentName})` : ''} แจ้ง: ${ticket.subject} — สถานที่: ${ticket.locationDetail}`,
       'support_ticket',
       ticket.ticketId,
       { exclude: [reportedBy] },
     );
     this.publishTicketChange(ticket, 'created');
+    // แชทบอทตอบกลับเองด้วย reply API (ฟรี ไม่กินโควตา push) จึงปิดตรงนี้ได้ด้วย notifyReporter: false
+    if (opts.notifyReporter !== false) {
+      this.pushToReporterIfLine(
+        ticket,
+        `✅ รับเรื่องแล้ว เลขที่ ${ticket.ticketNo}
+เรื่อง: ${ticket.subject}
+สถานที่: ${ticket.locationDetail}
+
+ทีม IT จะแจ้งกลับทาง LINE นี้เมื่อสถานะเปลี่ยน`,
+      );
+    }
 
     return ticket;
   }
@@ -157,6 +181,7 @@ export class SupportTicketsService {
     }
     if (query.status?.length) qb.andWhere('t.status IN (:...statuses)', { statuses: query.status });
     if (query.category) qb.andWhere('t.category = :category', { category: query.category });
+    if (query.source) qb.andWhere('t.source = :source', { source: query.source });
 
     const page = query.page || 1;
     const limit = query.limit || 20;
@@ -265,6 +290,7 @@ export class SupportTicketsService {
         'support_ticket',
         ticket.ticketId,
       );
+      this.pushToReporterIfLine(ticket, `🔧 ${ticket.ticketNo}: ทรัพย์สิน ${asset.assetNo} ที่คุณแจ้งปัญหา ถูกส่งซ่อมแล้ว`);
     }
 
     return { ...ticket, repair };
@@ -313,9 +339,20 @@ export class SupportTicketsService {
     });
   }
 
+  /**
+   * แจ้งผู้แจ้งทาง LINE ด้วย เฉพาะ ticket ที่แจ้งมาจาก LINE (ประหยัดโควตา push ของ OA — คนแจ้งทางเว็บก็ดูในเว็บ)
+   * ไม่ await — LineMessagingService ไม่ throw อยู่แล้ว และไม่ควรให้ response ของ IT ช้าตาม LINE API
+   */
+  private pushToReporterIfLine(ticket: SupportTicket, text: string) {
+    if (ticket.source !== TicketSource.LINE || !this.lineMessaging) return;
+    void this.lineMessaging.pushToEmployee(ticket.reportedBy, text);
+  }
+
   private async notifyStatusChanged(ticket: SupportTicket) {
     const label = TICKET_STATUS_LABEL[ticket.status];
     const resolutionText = ticket.resolution && ticket.status !== TicketStatus.IN_PROGRESS ? ` — ${ticket.resolution}` : '';
+    this.pushToReporterIfLine(ticket, `📋 ${ticket.ticketNo}: ${label}
+เรื่อง "${ticket.subject}"${resolutionText}`);
     await this.notifications.notify(
       ticket.reportedBy,
       NotificationType.TICKET_STATUS_UPDATED,

@@ -5,7 +5,7 @@ import { Assignment } from '../assignments/entities/assignment.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { SupportTicket } from './entities/support-ticket.entity';
 import { Location } from '../locations/entities/location.entity';
-import { NotificationType, TicketCategory, TicketStatus } from '@common/enums';
+import { NotificationType, TicketCategory, TicketSource, TicketStatus } from '@common/enums';
 
 const EMPLOYEE = {
   employeeId: 7,
@@ -36,14 +36,14 @@ function buildManager(found: { employee?: any; assignment?: any; asset?: any; ti
   };
 }
 
-function buildService(opts: { manager?: any; ticket?: any; attachments?: any; repairs?: any } = {}) {
+function buildService(opts: { manager?: any; ticket?: any; attachments?: any; repairs?: any; lineMessaging?: any } = {}) {
   const manager = opts.manager ?? buildManager();
   const repo = { findOne: jest.fn().mockResolvedValue(opts.ticket ?? null) } as any;
   const notifications = { notify: jest.fn(), notifyByPermission: jest.fn(), publishChange: jest.fn() } as any;
   const attachments = opts.attachments ?? ({ findByReference: jest.fn().mockResolvedValue([]), saveUpload: jest.fn(), remove: jest.fn() } as any);
   const repairs = opts.repairs ?? ({} as any);
   const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
-  const service = new SupportTicketsService(repo, repairs, notifications, attachments, dataSource);
+  const service = new SupportTicketsService(repo, repairs, notifications, attachments, dataSource, opts.lineMessaging);
   return { service, manager, notifications, attachments, repairs };
 }
 
@@ -216,5 +216,44 @@ describe('SupportTicketsService#escalateToRepair', () => {
     const ticket = { ticketId: 1, reportedBy: 7, status: TicketStatus.OPEN, assetId: null };
     const { service } = buildService({ manager: buildManager({ ticket }) });
     await expect(service.escalateToRepair(1, {}, 1)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('SupportTicketsService LINE channel', () => {
+  const lineMessaging = () => ({ pushToEmployee: jest.fn().mockResolvedValue(undefined) });
+  const dto = { locationDetail: 'ชั้น 3', category: TicketCategory.HARDWARE, subject: 'จอไม่ติด' };
+
+  it('defaults source to web and does not push to LINE', async () => {
+    const line = lineMessaging();
+    const { service } = buildService({ manager: buildManager({ employee: EMPLOYEE }), lineMessaging: line });
+    const t = await service.create(dto, employeeUser);
+    expect(t.source).toBe(TicketSource.WEB);
+    expect(line.pushToEmployee).not.toHaveBeenCalled();
+  });
+
+  it('stores source=line, tags the IT notification and confirms back on LINE', async () => {
+    const line = lineMessaging();
+    const { service, notifications } = buildService({ manager: buildManager({ employee: EMPLOYEE }), lineMessaging: line });
+    const t = await service.create(dto, employeeUser, { source: TicketSource.LINE });
+    expect(t.source).toBe(TicketSource.LINE);
+    expect(notifications.notifyByPermission.mock.calls[0][2]).toMatch(/^\[LINE\]/);
+    expect(line.pushToEmployee).toHaveBeenCalledWith(7, expect.stringContaining(t.ticketNo));
+  });
+
+  it('works without LineMessagingService (LINE not configured)', async () => {
+    const { service } = buildService({ manager: buildManager({ employee: EMPLOYEE }) });
+    await expect(service.create(dto, employeeUser, { source: TicketSource.LINE })).resolves.toBeDefined();
+  });
+
+  it('pushes status changes only for LINE tickets', async () => {
+    const line = lineMessaging();
+    const lineTicket = { ticketId: 1, ticketNo: 'IT-2611-0001', subject: 'x', reportedBy: 7, status: TicketStatus.OPEN, source: TicketSource.LINE };
+    await buildService({ manager: buildManager({ ticket: lineTicket }), lineMessaging: line }).service.updateStatus(1, { status: TicketStatus.IN_PROGRESS }, 1);
+    expect(line.pushToEmployee).toHaveBeenCalledWith(7, expect.stringContaining('กำลังดำเนินการ'));
+
+    const webLine = lineMessaging();
+    const webTicket = { ...lineTicket, status: TicketStatus.OPEN, source: TicketSource.WEB };
+    await buildService({ manager: buildManager({ ticket: webTicket }), lineMessaging: webLine }).service.updateStatus(1, { status: TicketStatus.IN_PROGRESS }, 1);
+    expect(webLine.pushToEmployee).not.toHaveBeenCalled();
   });
 });

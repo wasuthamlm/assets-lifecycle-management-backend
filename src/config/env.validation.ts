@@ -48,4 +48,16 @@ export const envValidationSchema = Joi.object({
   SMTP_USER: Joi.string().optional().allow(''),
   SMTP_PASS: Joi.string().optional().allow(''),
   SMTP_FROM: Joi.string().optional().allow(''),
+
+  // แจ้งปัญหา IT ผ่าน LINE (ดู modules/line) — ไม่ใส่ LINE_LOGIN_CHANNEL_ID = ปิด endpoint /line/* ทั้งหมด
+  // LINE_LOGIN_CHANNEL_ID: channel ID ของ LINE Login channel ที่สร้าง LIFF app (ใช้ verify ID token)
+  // LINE_MESSAGING_ACCESS_TOKEN: long-lived channel access token ของ Messaging API channel (push สถานะกลับ) — ไม่ใส่ = ไม่ push
+  // LINE_LIFF_ID: ส่งให้ frontend ผ่าน GET /line/config
+  LINE_LOGIN_CHANNEL_ID: Joi.string().optional().allow(''),
+  LINE_MESSAGING_ACCESS_TOKEN: Joi.string().optional().allow(''),
+  LINE_LIFF_ID: Joi.string().optional().allow(''),
+  // LINE_MESSAGING_CHANNEL_SECRET: ใช้ตรวจ X-Line-Signature ของ webhook แชทบอท — ไม่ใส่ = ปิดแชทบอท
+  // LINE_OA_BASIC_ID: เช่น @123abcde — ทำลิงก์เพิ่มเพื่อนให้หน้าโปรไฟล์
+  LINE_MESSAGING_CHANNEL_SECRET: Joi.string().optional().allow(''),
+  LINE_OA_BASIC_ID: Joi.string().optional().allow(''),
 });

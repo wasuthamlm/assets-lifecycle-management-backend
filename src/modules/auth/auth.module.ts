@@ -35,6 +35,7 @@ import { SupabaseIdentityService } from './supabase-identity.service';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, SupabaseIdentityService],
-  exports: [AuthService],
+  // JwtStrategy: LineIdTokenGuard ใช้ validate() สร้าง req.user ชุดสิทธิ์เดียวกับ login เว็บ
+  exports: [AuthService, JwtStrategy],
 })
 export class AuthModule {}

@@ -32,6 +32,13 @@ export class Employee extends BaseEntity {
   @Column({ nullable: true })
   phone: string;
 
+  /**
+   * LINE userId (sub ของ LIFF ID token) — ผูกครั้งแรกผ่าน POST /line/link หลัง login ปกติ
+   * ใช้ระบุตัวผู้แจ้งจากฟอร์ม LIFF และ push สถานะ ticket กลับทาง LINE
+   */
+  @Column({ name: 'line_user_id', type: 'varchar', length: 64, unique: true, nullable: true })
+  lineUserId: string | null;
+
   @OneToMany(() => EmployeeRole, (er) => er.employee)
   employeeRoles: EmployeeRole[];
 }

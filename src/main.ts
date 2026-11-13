@@ -39,7 +39,15 @@ async function bootstrap() {
 
   app.use(helmet());
   // จำกัดขนาด request body กัน payload ใหญ่เกินจำเป็น (DoS ผ่าน large body)
-  app.use(json({ limit: '1mb' }));
+  app.use(
+    json({
+      limit: '1mb',
+      // webhook ของ LINE ต้องตรวจลายเซ็นกับ body ดิบ (byte ต่อ byte) — เก็บไว้เฉพาะ path นี้
+      verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
+        if (req.originalUrl?.startsWith('/api/v1/line/webhook')) req.rawBody = buf;
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: '1mb' }));
 
   app.setGlobalPrefix('api/v1');

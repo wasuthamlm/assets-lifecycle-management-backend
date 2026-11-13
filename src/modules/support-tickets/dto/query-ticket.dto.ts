@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { TicketCategory, TicketStatus } from '@common/enums';
+import { TicketCategory, TicketSource, TicketStatus } from '@common/enums';
 import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
@@ -19,6 +19,11 @@ export class QueryTicketDto {
   @IsOptional()
   @IsEnum(TicketCategory)
   category?: TicketCategory;
+
+  @ApiPropertyOptional({ enum: TicketSource, description: 'ช่องทางที่แจ้ง (web / line)' })
+  @IsOptional()
+  @IsEnum(TicketSource)
+  source?: TicketSource;
 
   @ApiPropertyOptional()
   @IsOptional()

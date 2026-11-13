@@ -1,6 +1,6 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from '@common/entities/base.entity';
-import { TicketCategory, TicketPriority, TicketStatus } from '@common/enums';
+import { TicketCategory, TicketPriority, TicketSource, TicketStatus } from '@common/enums';
 import { Asset } from '../../assets/entities/asset.entity';
 import { Assignment } from '../../assignments/entities/assignment.entity';
 import { Employee } from '../../employees/entities/employee.entity';
@@ -42,6 +42,11 @@ export class SupportTicket extends BaseEntity {
    */
   @Column({ name: 'reporter_info', type: 'jsonb' })
   reporterInfo: TicketReporterInfo;
+
+  /** แจ้งผ่านเว็บ หรือฟอร์ม LIFF ใน LINE OA — ใช้ติดป้าย "แจ้งผ่าน LINE" และเลือกว่าจะ push สถานะกลับทาง LINE ไหม */
+  @Column({ type: 'enum', enum: TicketSource, default: TicketSource.WEB })
+  @Index('IDX_support_tickets_source')
+  source: TicketSource;
 
   @Column({ type: 'enum', enum: TicketCategory })
   category: TicketCategory;

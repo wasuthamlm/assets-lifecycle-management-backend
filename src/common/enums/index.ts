@@ -124,6 +124,12 @@ export enum TicketCategory {
   OTHER = 'other',
 }
 
+/** ช่องทางที่เปิด ticket — server เป็นคนตั้งเสมอ client ส่งเองไม่ได้ (ดู modules/line) */
+export enum TicketSource {
+  WEB = 'web',
+  LINE = 'line',
+}
+
 export enum TicketPriority {
   LOW = 'low',
   NORMAL = 'normal',
