@@ -80,11 +80,7 @@ export class LineLinkService {
     if (attemptsActive && attempts.failedCount >= MAX_FAILED_ATTEMPTS) return 'too_many_attempts';
 
     // ลบแล้วได้แถวคืนมา = ใช้รหัสได้ครั้งเดียวแม้กดส่งพร้อมกันสองครั้ง
-    const consumed: { employee_id: number }[] = await this.codes
-      .createQueryBuilder()
-      .delete()
-      .where('code = :code AND expires_at > :now', { code, now: nowDate })
-      .returning(['employee_id'])
+    const consumed: { employee_id: number }[] = await this.consumeCodeQuery(code, nowDate)
       .execute()
       .then((r) => r.raw ?? []);
 
@@ -103,5 +99,17 @@ export class LineLinkService {
     await this.employees.update({ lineUserId, employeeId: Not(employeeId) }, { lineUserId: null });
     await this.employees.update({ employeeId }, { lineUserId });
     return 'linked';
+  }
+
+  /**
+   * returning ต้องเป็น string — แบบ array TypeORM ตีความเป็นชื่อ property (employeeId) ถ้าไม่ตรง
+   * จะทิ้ง RETURNING ทั้งก้อนเงียบๆ → รหัสถูกลบแต่ได้แถวว่าง → ตอบ "รหัสไม่ถูกต้อง" ทั้งที่รหัสถูก
+   */
+  consumeCodeQuery(code: string, now: Date) {
+    return this.codes
+      .createQueryBuilder()
+      .delete()
+      .where('code = :code AND expires_at > :now', { code, now })
+      .returning('employee_id');
   }
 }

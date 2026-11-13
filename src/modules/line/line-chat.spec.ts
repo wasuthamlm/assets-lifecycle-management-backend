@@ -1,4 +1,6 @@
 import { createHmac } from 'crypto';
+import { DataSource } from 'typeorm';
+import { LineLinkAttempt, LineLinkCode } from './entities/line-link-code.entity';
 import { TicketCategory, TicketSource } from '@common/enums';
 import { LineChatService, LineWebhookEvent } from './line-chat.service';
 import { LineLinkService, LINK_CODE_TTL_MS } from './line-link.service';
@@ -62,6 +64,16 @@ function fakeLinkRepos() {
   };
   return { codeRepo, attemptRepo };
 }
+
+describe('LineLinkService.consumeCodeQuery (SQL จริงของ TypeORM)', () => {
+  // fake repo ข้างล่างไม่ได้สร้าง SQL จริง — เคยพลาด returning(['employee_id']) ที่ TypeORM ทิ้ง RETURNING เงียบๆ
+  it('keeps RETURNING employee_id so a consumed code is not reported as invalid', async () => {
+    const ds = new DataSource({ type: 'postgres', entities: [LineLinkCode, LineLinkAttempt] });
+    await (ds as any).buildMetadatas();
+    const service = new LineLinkService({} as any, {} as any, ds.getRepository(LineLinkCode), ds.getRepository(LineLinkAttempt));
+    expect(service.consumeCodeQuery('123456', new Date()).getQuery()).toMatch(/RETURNING employee_id$/);
+  });
+});
 
 describe('LineLinkService link codes', () => {
   const build = () => {
